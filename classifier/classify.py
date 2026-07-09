@@ -91,8 +91,9 @@ class BirdClassifier:
         return np.expand_dims(arr, axis=0)
 
     def classify(self, image_path: str | Path) -> Prediction:
-        image = Image.open(image_path)
-        self.interp.set_tensor(self.inp["index"], self._preprocess(image))
+        with Image.open(image_path) as image:
+            tensor = self._preprocess(image)
+        self.interp.set_tensor(self.inp["index"], tensor)
         self.interp.invoke()
         raw = self.interp.get_tensor(self.out["index"])[0]
 

@@ -5,3 +5,4 @@ classifier/model/*.txt
 !classifier/model/README.md
 __pycache__/
 *.pyc
+.DS_Store

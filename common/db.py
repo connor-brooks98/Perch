@@ -22,8 +22,14 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     """Open (and initialise, if needed) the shared database."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
+    # Keep these runtime pragmas explicit on every connection; schema.sql also
+    # carries them, but this makes the concurrency settings resilient to future
+    # schema/init refactors.
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA busy_timeout = 30000;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(SCHEMA_PATH.read_text())
     return conn
@@ -50,6 +56,11 @@ def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
 def clip_exists(conn: sqlite3.Connection, filename: str) -> bool:
     row = conn.execute("SELECT 1 FROM clips WHERE filename = ?", (filename,)).fetchone()
     return row is not None
+
+
+def clip_status(conn: sqlite3.Connection, filename: str) -> str | None:
+    row = conn.execute("SELECT status FROM clips WHERE filename = ?", (filename,)).fetchone()
+    return row["status"] if row else None
 
 
 def add_clip(conn: sqlite3.Connection, filename: str, camera: str, captured_at: str) -> int:
@@ -100,6 +111,33 @@ def add_detection(
     )
     conn.commit()
     return cur.lastrowid
+
+
+def finish_clip_with_detection(
+    conn: sqlite3.Connection,
+    clip_id: int,
+    common_name: str,
+    scientific: str | None,
+    confidence: float,
+    captured_at: str,
+    thumbnail: str,
+) -> None:
+    """Atomically upsert a detection and mark its source clip done."""
+    with conn:
+        conn.execute(
+            "INSERT INTO detections"
+            "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, created_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(clip_id) DO UPDATE SET "
+            "  common_name = excluded.common_name, scientific = excluded.scientific, "
+            "  confidence  = excluded.confidence,  captured_at = excluded.captured_at, "
+            "  thumbnail   = excluded.thumbnail,   created_at  = excluded.created_at",
+            (clip_id, common_name, scientific, confidence, captured_at, thumbnail, now_iso()),
+        )
+        conn.execute(
+            "UPDATE clips SET status = ?, note = ? WHERE id = ?",
+            ("done", common_name, clip_id),
+        )
 
 
 def detection_count(conn: sqlite3.Connection) -> int:

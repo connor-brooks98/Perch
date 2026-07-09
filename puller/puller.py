@@ -35,7 +35,7 @@ CREDS_PATH = os.getenv("BLINK_CREDS", "/data/blink/creds.json")
 CLIPS_DIR = Path(os.getenv("CLIPS_DIR", "/data/clips"))
 DB_PATH = os.getenv("DB_PATH", "/data/db/feeder.sqlite")
 CAMERA_NAME = os.getenv("CAMERA_NAME", "all").strip() or "all"
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "300"))
+POLL_INTERVAL = max(60, int(os.getenv("POLL_INTERVAL", "300")))
 RETAIN_DAYS = int(os.getenv("RETAIN_DAYS", "14"))
 HEARTBEAT_EVERY = int(os.getenv("HEARTBEAT_EVERY", "12"))  # cycles between "ok" pings
 
@@ -92,7 +92,9 @@ def prune_old_clips(conn) -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=RETAIN_DAYS)
     for path in CLIPS_DIR.glob("*.mp4"):
         try:
-            if datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) < cutoff:
+            old = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) < cutoff
+            terminal = db.clip_status(conn, path.name) in {"done", "error", "skipped"}
+            if old and terminal:
                 path.unlink()
                 log.info("pruned old clip %s", path.name)
         except OSError:
@@ -106,9 +108,9 @@ async def poll_once(blink: Blink, conn) -> int:
     if not last_since:
         last_since = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y/%m/%d %H:%M")
 
-    # download_videos is the most version-fragile blinkpy call. Contain its
-    # failures here so a transient error just skips this cycle instead of
-    # bubbling up and tearing down / rebuilding the whole session.
+    # download_videos is the most version-fragile blinkpy call. Let failures
+    # bubble to the outer loop so they trigger ntfy + session rebuild instead
+    # of being mistaken for a healthy "no new clips" cycle.
     try:
         await blink.download_videos(
             str(CLIPS_DIR),
@@ -117,8 +119,13 @@ async def poll_once(blink: Blink, conn) -> int:
             stop=20,
             delay=1,
         )
-    except Exception:  # noqa: BLE001
-        log.warning("download_videos failed this cycle; registering what exists", exc_info=True)
+    except TypeError as exc:
+        raise RuntimeError(
+            "blinkpy download_videos() signature/behavior may have changed; "
+            "review the pinned blinkpy version before unattended use"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Blink video download failed: {exc}") from exc
 
     added = register_new_clips(conn)
 

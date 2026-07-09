@@ -83,7 +83,8 @@ def save_thumbnail(frame: Path, clip_id: int) -> str:
 
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{clip_id}.jpg"
-    img = Image.open(frame).convert("RGB")
+    with Image.open(frame) as opened:
+        img = opened.convert("RGB")
     if img.width > THUMB_WIDTH:
         h = round(img.height * THUMB_WIDTH / img.width)
         img = img.resize((THUMB_WIDTH, h), Image.LANCZOS)
@@ -119,9 +120,15 @@ def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
             return None
 
         thumb = save_thumbnail(best_frame, clip["id"])
-        db.add_detection(conn, clip["id"], best.common_name, best.scientific,
-                         best.confidence, clip["captured_at"], thumb)
-        db.mark_clip(conn, clip["id"], "done", best.common_name)
+        db.finish_clip_with_detection(
+            conn,
+            clip["id"],
+            best.common_name,
+            best.scientific,
+            best.confidence,
+            clip["captured_at"],
+            thumb,
+        )
         log.info("clip %s -> %s (%.2f)", clip["filename"], best.common_name, best.confidence)
         return best.common_name
 
@@ -156,7 +163,7 @@ def regenerate_json(conn) -> None:
         ],
     }
     tmp = DATA_DIR / "detections.json.tmp"
-    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(DATA_DIR / "detections.json")  # atomic swap so readers never see half a file
 
     # Thumbnails accumulate forever otherwise (only raw clips get pruned). Drop
@@ -180,9 +187,11 @@ def run() -> None:
     regenerate_json(conn)  # ensure the dashboard has a file to read on first boot
 
     idle_cycles = 0
+    failures = 0
     while True:
         try:
             pending = db.pending_clips(conn, limit=25)
+            failures = 0
             new_species = []
             for clip in pending:
                 result = process_clip(clf, conn, clip)
@@ -199,8 +208,11 @@ def run() -> None:
                 if idle_cycles % 180 == 0:  # ~ hourly at 20s cadence
                     notify.heartbeat("classifier", "idle, awaiting clips")
         except Exception as exc:  # noqa: BLE001
+            failures += 1
             log.exception("watch cycle failed: %s", exc)
             notify.failure("classifier", f"cycle failed: {exc}")
+            if failures >= 10:
+                raise RuntimeError("classifier failed 10 consecutive cycles") from exc
         time.sleep(WATCH_INTERVAL)
 
 
