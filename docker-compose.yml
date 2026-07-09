@@ -3,6 +3,14 @@ name: bird-feeder
 # One compose project, all ARM64-friendly. The same file runs unchanged on the
 # NUC if you ever migrate off the Pi.
 
+# Cap per-container logs; the default json-file driver is unbounded and would
+# eventually fill the Pi's disk during weeks of unattended INFO-level logging.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   puller:
     build:
@@ -12,6 +20,7 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+    logging: *default-logging
 
   classifier:
     build:
@@ -22,6 +31,7 @@ services:
       - ./data:/data
       - ./classifier/model:/app/model:ro   # drop model.tflite + labels.txt here
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - puller
 
@@ -35,6 +45,7 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - classifier
 
