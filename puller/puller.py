@@ -65,6 +65,10 @@ async def make_blink(session: ClientSession) -> Blink:
     blink.auth = Auth(await json_load(CREDS_PATH), no_prompt=True, session=session)
     await blink.start()
     await blink.refresh()
+    # blinkpy rotates the auth token (and stores the trusted-device id) in memory.
+    # Persist it now so the on-disk creds don't go stale — otherwise a restart
+    # after long uptime can re-trigger 2FA, which is unrecoverable headless.
+    await blink.save(CREDS_PATH)
     return blink
 
 
@@ -103,13 +107,19 @@ async def poll_once(blink: Blink, conn) -> int:
     if not last_since:
         last_since = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y/%m/%d %H:%M")
 
-    await blink.download_videos(
-        str(CLIPS_DIR),
-        since=last_since,
-        camera=CAMERA_NAME,
-        stop=20,
-        delay=1,
-    )
+    # download_videos is the most version-fragile blinkpy call. Contain its
+    # failures here so a transient error just skips this cycle instead of
+    # bubbling up and tearing down / rebuilding the whole session.
+    try:
+        await blink.download_videos(
+            str(CLIPS_DIR),
+            since=last_since,
+            camera=CAMERA_NAME,
+            stop=20,
+            delay=1,
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("download_videos failed this cycle; registering what exists", exc_info=True)
 
     added = register_new_clips(conn)
 
@@ -142,9 +152,17 @@ async def run() -> None:
                     notify.push(f"pulled {added} new clip(s)", title="🐦 feeder", tags="camera")
                 elif cycle % HEARTBEAT_EVERY == 0:
                     notify.heartbeat("puller", f"cycle {cycle}, no new clips")
+                    # Keep on-disk creds fresh even without a restart.
+                    try:
+                        await blink.save(CREDS_PATH)
+                    except Exception:  # noqa: BLE001
+                        log.warning("could not persist refreshed creds", exc_info=True)
             except FileNotFoundError as exc:
                 log.error("%s", exc)
                 notify.failure("puller", str(exc))
+                # Under `restart: unless-stopped` a bare return would exit(0) and
+                # respawn within seconds, spamming ntfy. Back off before exiting.
+                await asyncio.sleep(60)
                 return
             except Exception as exc:  # noqa: BLE001
                 log.exception("poll failed: %s", exc)
