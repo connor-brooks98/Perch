@@ -24,7 +24,7 @@ except ImportError:  # fallback so the module imports anywhere for testing
     from tensorflow.lite import Interpreter  # type: ignore
 
 _PAREN_RE = re.compile(r"^(.*?)\s*\((.*)\)\s*$")
-_INDEX_PREFIX_RE = re.compile(r"^\s*\d+[\s,]+(.*)$")
+_INDEX_PREFIX_RE = re.compile(r"^\s*(\d+)[\s,]+(.*)$")
 
 
 @dataclass
@@ -73,7 +73,12 @@ class BirdClassifier:
             if not text:
                 continue
             m = _INDEX_PREFIX_RE.match(text)
-            labels[i] = m.group(1).strip() if m else text
+            if m:
+                # File carries explicit indices ("964 Cardinalis ..."): trust them,
+                # so a blank/missing line can't silently shift every class by one.
+                labels[int(m.group(1))] = m.group(2).strip()
+            else:
+                labels[i] = text
         return labels
 
     def _preprocess(self, image: Image.Image) -> np.ndarray:
