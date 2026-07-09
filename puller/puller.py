@@ -14,7 +14,6 @@ import logging
 import os
 import re
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -172,7 +171,7 @@ async def run() -> None:
                     blink = await make_blink(session)
                 except Exception as reauth:  # noqa: BLE001
                     log.error("re-auth failed: %s", reauth)
-            time.sleep(POLL_INTERVAL)
+            await asyncio.sleep(POLL_INTERVAL)
 
 
 if __name__ == "__main__":
