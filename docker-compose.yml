@@ -20,6 +20,7 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+    init: true
     logging: *default-logging
 
   classifier:
@@ -31,6 +32,7 @@ services:
       - ./data:/data
       - ./classifier/model:/app/model:ro   # drop model.tflite + labels.txt here
     restart: unless-stopped
+    init: true
     logging: *default-logging
     depends_on:
       - puller
@@ -43,8 +45,9 @@ services:
     volumes:
       - ./data:/data
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
+    init: true
     logging: *default-logging
     depends_on:
       - classifier
