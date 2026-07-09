@@ -139,7 +139,7 @@ def regenerate_json(conn) -> None:
     payload = {
         "generated_at": db.now_iso(),
         "stats": {
-            "total": len(detections),
+            "total": db.detection_count(conn),
             "species": len(species),
             "today": _today_count(detections),
         },
@@ -158,6 +158,17 @@ def regenerate_json(conn) -> None:
     tmp = DATA_DIR / "detections.json.tmp"
     tmp.write_text(json.dumps(payload, indent=2))
     tmp.replace(DATA_DIR / "detections.json")  # atomic swap so readers never see half a file
+
+    # Thumbnails accumulate forever otherwise (only raw clips get pruned). Drop
+    # any thumb not referenced by the current window; it's off the dashboard.
+    if THUMBS_DIR.exists():
+        keep = {Path(d["thumbnail"]).name for d in detections if d["thumbnail"]}
+        for f in THUMBS_DIR.glob("*.jpg"):
+            if f.name not in keep:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
 
 
 def run() -> None:
