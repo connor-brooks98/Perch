@@ -91,11 +91,20 @@ def add_detection(
     cur = conn.execute(
         "INSERT INTO detections"
         "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, created_at) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?)",
+        "VALUES(?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(clip_id) DO UPDATE SET "
+        "  common_name = excluded.common_name, scientific = excluded.scientific, "
+        "  confidence  = excluded.confidence,  captured_at = excluded.captured_at, "
+        "  thumbnail   = excluded.thumbnail,   created_at  = excluded.created_at",
         (clip_id, common_name, scientific, confidence, captured_at, thumbnail, now_iso()),
     )
     conn.commit()
     return cur.lastrowid
+
+
+def detection_count(conn: sqlite3.Connection) -> int:
+    """Total detections ever recorded (not limited by the dashboard window)."""
+    return conn.execute("SELECT COUNT(*) AS n FROM detections").fetchone()["n"]
 
 
 def recent_detections(conn: sqlite3.Connection, limit: int = 200):

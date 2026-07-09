@@ -4,6 +4,7 @@
 
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 5000;
+PRAGMA synchronous = NORMAL;   -- safe under WAL; cuts fsync latency/SD wear on the Pi
 
 -- One row per motion clip pulled from Blink.
 CREATE TABLE IF NOT EXISTS clips (
@@ -32,6 +33,11 @@ CREATE TABLE IF NOT EXISTS detections (
 
 CREATE INDEX IF NOT EXISTS idx_det_captured ON detections(captured_at);
 CREATE INDEX IF NOT EXISTS idx_det_species  ON detections(common_name);
+-- Enforce one detection per clip so a crash between insert and status-update
+-- can't leave a duplicate when the clip is reprocessed. Enables the upsert in
+-- db.add_detection(). (If an existing DB already has duplicate clip_ids, dedupe
+-- them once before this index will build.)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_det_clip ON detections(clip_id);
 
 -- Tiny key/value store for cursors (e.g. last 'since' timestamp for the puller).
 CREATE TABLE IF NOT EXISTS state (
