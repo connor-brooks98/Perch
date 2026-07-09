@@ -1,0 +1,155 @@
+/* Backyard Field Log — a naturalist's log, not a dashboard.
+   Palette: sage mist ground, pine ink, goldfinch gold, robin teal. */
+:root {
+  --mist:      #E9EDE4;
+  --mist-deep: #DEE4D6;
+  --paper:     #FBFCF9;
+  --pine:      #243029;
+  --pine-soft: #52604F;
+  --gold:      #DFA12B;
+  --robin:     #2F6E62;
+  --line:      #D0D8C7;
+  --shadow:    0 1px 2px rgba(36, 48, 41, .05), 0 8px 24px -12px rgba(36, 48, 41, .18);
+
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --wrap: 44rem;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  color: var(--pine);
+  background: var(--mist);
+  line-height: 1.5;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1.25rem 4rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* faint paper tooth so the sage ground isn't a flat fill */
+.grain {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  background-image: radial-gradient(rgba(36,48,41,.04) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+main, .masthead, .colophon { max-width: var(--wrap); margin-inline: auto; }
+
+/* ---- masthead ---- */
+.masthead { padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--line); }
+.eyebrow {
+  margin: 0; font-size: .72rem; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--robin); font-weight: 600;
+}
+h1 {
+  margin: .25rem 0 1.1rem;
+  font-family: var(--display);
+  font-weight: 600; font-size: clamp(2rem, 7vw, 2.9rem);
+  line-height: 1.02; letter-spacing: -.01em;
+}
+
+.stats { display: flex; gap: 2rem; margin: 0; }
+.stats div { display: flex; flex-direction: column-reverse; }
+.stats dt {
+  font-size: .68rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pine-soft);
+}
+.stats dd {
+  margin: 0; font-family: var(--display); font-weight: 600;
+  font-size: 1.9rem; line-height: 1; font-variant-numeric: tabular-nums;
+}
+
+/* ---- section eyebrows ---- */
+.section-eyebrow {
+  font-size: .72rem; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--pine-soft); font-weight: 600; margin: 2rem 0 .75rem;
+}
+
+/* ---- latest visitor hero ---- */
+.hero-card {
+  display: grid; grid-template-columns: 40% 1fr; gap: 1.25rem;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: 1rem; box-shadow: var(--shadow);
+}
+.hero-photo { border-radius: 10px; overflow: hidden; background: var(--mist-deep); aspect-ratio: 4/3; }
+.hero-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-body { display: flex; flex-direction: column; justify-content: center; }
+.species { font-family: var(--display); font-weight: 600; font-size: 1.7rem; margin: 0; line-height: 1.05; }
+.scientific { font-family: var(--display); font-style: italic; color: var(--pine-soft); margin: .1rem 0 .5rem; }
+.when { font-size: .85rem; color: var(--pine-soft); margin: 0 0 .75rem; }
+
+/* confidence rendered as a slender branch that fills gold */
+.confidence { display: flex; align-items: center; gap: .6rem; }
+.confidence-track { flex: 1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.confidence-fill { display: block; height: 100%; background: var(--gold); width: 0; }
+.confidence-label { font-size: .78rem; font-variant-numeric: tabular-nums; color: var(--pine-soft); }
+
+/* ---- feed ---- */
+.feed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.filter {
+  font-family: var(--sans); font-size: .9rem; color: var(--pine);
+  background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+  padding: .45rem .9rem; min-width: 12rem; flex: 0 1 16rem;
+}
+.filter:focus-visible { outline: 2px solid var(--robin); outline-offset: 2px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .9rem; }
+
+.card {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column;
+}
+.card-photo { aspect-ratio: 1/1; background: var(--mist-deep); }
+.card-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-body { padding: .6rem .7rem .7rem; }
+.card .species { font-size: 1.02rem; }
+.card .scientific { font-size: .78rem; margin: .05rem 0 .35rem; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; font-size: .72rem; color: var(--pine-soft); }
+.badge {
+  font-variant-numeric: tabular-nums; color: var(--robin); font-weight: 600;
+  border: 1px solid var(--line); border-radius: 999px; padding: .05rem .4rem;
+}
+
+.empty {
+  text-align: center; color: var(--pine-soft); font-style: italic;
+  padding: 2.5rem 1rem; font-family: var(--display);
+}
+
+/* ---- species tally ---- */
+.tally-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.tally-list li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  padding: .6rem .1rem; border-bottom: 1px solid var(--line);
+}
+.tally-name { font-family: var(--display); font-size: 1.05rem; }
+.tally-name em { font-style: italic; color: var(--pine-soft); font-size: .82rem; margin-left: .4rem; }
+.tally-count { font-variant-numeric: tabular-nums; color: var(--pine-soft); font-size: .85rem; white-space: nowrap; }
+
+/* ---- colophon ---- */
+.colophon {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+  font-size: .8rem; color: var(--pine-soft);
+}
+.refresh {
+  font-family: var(--sans); font-size: .8rem; color: var(--robin);
+  background: none; border: 1px solid var(--line); border-radius: 999px;
+  padding: .35rem .85rem; cursor: pointer;
+}
+.refresh:hover { border-color: var(--robin); }
+.refresh:focus-visible { outline: 2px solid var(--robin); outline-offset: 2px; }
+
+@media (max-width: 30rem) {
+  .hero-card { grid-template-columns: 1fr; }
+  .stats { gap: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .confidence-fill { transition: width .6s ease; }
+  .card, .hero-card { transition: transform .15s ease; }
+}

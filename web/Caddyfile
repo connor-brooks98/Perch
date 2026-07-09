@@ -1,0 +1,36 @@
+{
+	admin off
+	auto_https off
+}
+
+# Served on :8080 inside the container. Exposure (Tailscale Funnel / Cloudflare
+# Tunnel) happens at the edge — see README Phase 6.
+:8080 {
+	encode gzip
+
+	# Gate everything behind a shared login. Hash comes from `caddy hash-password`,
+	# passed in via the BASIC_AUTH_* env vars (see .env).
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	# Dynamic content the classifier writes lives on the /data volume.
+	@dynamic path /thumbs/* /data/*
+	handle @dynamic {
+		root * /data/web
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	# Everything else is the baked-in static dashboard.
+	handle {
+		root * /srv/site
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

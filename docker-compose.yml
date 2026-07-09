@@ -1,0 +1,42 @@
+name: bird-feeder
+
+# One compose project, all ARM64-friendly. The same file runs unchanged on the
+# NUC if you ever migrate off the Pi.
+
+services:
+  puller:
+    build:
+      context: .
+      dockerfile: puller/Dockerfile
+    env_file: .env
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  classifier:
+    build:
+      context: .
+      dockerfile: classifier/Dockerfile
+    env_file: .env
+    volumes:
+      - ./data:/data
+      - ./classifier/model:/app/model:ro   # drop model.tflite + labels.txt here
+    restart: unless-stopped
+    depends_on:
+      - puller
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    env_file: .env
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      - classifier
+
+# Persistent state (creds, DB, clips, generated dashboard data) lives under
+# ./data on the host — bind-mounted so it's trivial to back up. See scripts/.

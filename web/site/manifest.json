@@ -1,0 +1,16 @@
+{
+  "name": "Backyard Field Log",
+  "short_name": "Field Log",
+  "description": "Birds spotted at the feeder, identified on the fly.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E9EDE4",
+  "theme_color": "#E9EDE4",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

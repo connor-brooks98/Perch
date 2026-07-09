@@ -1,0 +1,7 @@
+.env
+data/
+classifier/model/*.tflite
+classifier/model/*.txt
+!classifier/model/README.md
+__pycache__/
+*.pyc

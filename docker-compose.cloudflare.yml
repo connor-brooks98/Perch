@@ -1,0 +1,16 @@
+# Optional: Cloudflare Tunnel instead of Tailscale Funnel (Phase 6, alt path).
+#
+#   1. Create a tunnel in the Cloudflare Zero Trust dashboard, point a hostname
+#      (e.g. birds.yourdomain.com) at http://web:8080.
+#   2. Put the tunnel token in .env as CLOUDFLARE_TUNNEL_TOKEN.
+#   3. Add a Cloudflare Access policy on that hostname for email login — then you
+#      can drop Caddy's basic_auth if you prefer Access as the sole gate.
+#   4. Run:  docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+#
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - web
