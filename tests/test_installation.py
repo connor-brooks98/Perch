@@ -19,6 +19,20 @@ def read(relative_path: str) -> str:
 
 
 class InstallationContractTests(unittest.TestCase):
+    def test_readme_routes_first_time_installers_to_the_authoritative_guide(self) -> None:
+        readme = read("README.md")
+        guide = read("Perch_Installation_Guide.md")
+        self.assertIn("# Perch", readme)
+        self.assertIn("[first-time installation guide](Perch_Installation_Guide.md)", readme)
+        self.assertIn("single authoritative", guide)
+
+    def test_docs_state_the_supported_platform_boundary(self) -> None:
+        documents = "\n".join([read("README.md"), read("Perch_Installation_Guide.md")])
+        self.assertIn("primary and tested installation path", documents)
+        self.assertIn("64-bit machines that run Linux Docker containers", documents)
+        self.assertIn("advanced installation", documents)
+        self.assertNotIn("runs unchanged on any", documents.lower())
+
     def test_arm64_inference_dependencies_exclude_numpy_2(self) -> None:
         requirements = read("classifier/requirements.txt")
         self.assertIn("tflite-runtime==2.14.0", requirements)
