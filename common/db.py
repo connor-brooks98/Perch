@@ -7,7 +7,7 @@ write-rate workload (a handful of clips per minute at most).
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -32,7 +32,26 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(SCHEMA_PATH.read_text())
+    _migrate_clips(conn)
     return conn
+
+
+def _migrate_clips(conn: sqlite3.Connection) -> None:
+    """Add recovery columns to databases created before durable processing."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(clips)")}
+    additions = {
+        "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+        "next_attempt_at": "TEXT",
+        "processing_started_at": "TEXT",
+    }
+    with conn:
+        for name, definition in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE clips ADD COLUMN {name} {definition}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clips_ready "
+            "ON clips(status, next_attempt_at, captured_at)"
+        )
 
 
 # ---- state (key/value cursors) ------------------------------------------
@@ -80,9 +99,71 @@ def pending_clips(conn: sqlite3.Connection, limit: int = 25):
     ).fetchall()
 
 
+def claim_pending_clips(conn: sqlite3.Connection, limit: int = 25):
+    """Atomically claim due work for the single supported classifier."""
+    now = now_iso()
+    with conn:
+        rows = conn.execute(
+            "WITH due AS ("
+            "  SELECT id FROM clips WHERE status = 'pending' "
+            "  AND (next_attempt_at IS NULL OR next_attempt_at <= ?) "
+            "  ORDER BY captured_at ASC LIMIT ?"
+            ") "
+            "UPDATE clips SET status = 'processing', "
+            "attempt_count = attempt_count + 1, next_attempt_at = NULL, "
+            "processing_started_at = ?, note = NULL "
+            "WHERE status = 'pending' AND id IN (SELECT id FROM due) "
+            "RETURNING *",
+            (now, limit, now),
+        ).fetchall()
+    return sorted(rows, key=lambda row: row["captured_at"])
+
+
+def recover_processing_clips(conn: sqlite3.Connection) -> int:
+    """Return work interrupted by a classifier stop to the ready queue."""
+    with conn:
+        cur = conn.execute(
+            "UPDATE clips SET status = 'pending', next_attempt_at = NULL, "
+            "processing_started_at = NULL, note = 'interrupted; retrying' "
+            "WHERE status = 'processing'"
+        )
+    return cur.rowcount
+
+
+def fail_clip(
+    conn: sqlite3.Connection,
+    clip_id: int,
+    attempt_count: int,
+    error: str,
+    *,
+    max_attempts: int,
+    retry_delay_seconds: int,
+) -> bool:
+    """Reschedule a failed clip, or mark it terminal after its last attempt."""
+    note = str(error)[:1000]
+    terminal = attempt_count >= max_attempts
+    if terminal:
+        status = "error"
+        next_attempt_at = None
+    else:
+        status = "pending"
+        delay = retry_delay_seconds * (2 ** max(0, attempt_count - 1))
+        next_attempt_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=delay)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with conn:
+        conn.execute(
+            "UPDATE clips SET status = ?, note = ?, next_attempt_at = ?, "
+            "processing_started_at = NULL WHERE id = ?",
+            (status, note, next_attempt_at, clip_id),
+        )
+    return terminal
+
+
 def mark_clip(conn: sqlite3.Connection, clip_id: int, status: str, note: str | None = None) -> None:
     conn.execute(
-        "UPDATE clips SET status = ?, note = ? WHERE id = ?",
+        "UPDATE clips SET status = ?, note = ?, next_attempt_at = NULL, "
+        "processing_started_at = NULL WHERE id = ?",
         (status, note, clip_id),
     )
     conn.commit()
@@ -135,7 +216,8 @@ def finish_clip_with_detection(
             (clip_id, common_name, scientific, confidence, captured_at, thumbnail, now_iso()),
         )
         conn.execute(
-            "UPDATE clips SET status = ?, note = ? WHERE id = ?",
+            "UPDATE clips SET status = ?, note = ?, next_attempt_at = NULL, "
+            "processing_started_at = NULL WHERE id = ?",
             ("done", common_name, clip_id),
         )
 

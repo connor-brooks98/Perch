@@ -19,7 +19,7 @@ any other 64-bit Linux host (e.g. a mini PC) unchanged.
 |------|------|
 | `puller/` | `blinkpy` clip fetcher + one-time `auth_setup.py` |
 | `classifier/` | ffmpeg frame extraction + TFLite inference (`classify.py`, `watcher.py`) |
-| `classifier/model/` | **you drop the model + labels here** (see its README) |
+| `classifier/model/` | verified MobileNetV2 model bundle (see its README) |
 | `common/` | shared SQLite schema/helpers + ntfy notifier |
 | `web/` | Caddy config + the static field-log dashboard |
 | `scripts/backup-db.sh` | nightly SQLite backup |
@@ -34,8 +34,9 @@ Before setup, make sure you have:
 
 - A **dedicated** Blink account (not your everyday login) with the feeder camera
   added to it.
-- A Blink storage option enabled — a subscription **or** a Sync Module 2 + USB
-  drive — so recorded clips are retained somewhere `blinkpy` can reach them.
+- An active **Blink subscription** so clips appear in Blink's cloud-media feed.
+  Sync Module 2 local-storage downloading uses a different API and is not yet
+  implemented by Perch.
 - A Raspberry Pi (64-bit; a Pi 5 is ideal) running Raspberry Pi OS Lite 64-bit
   with Docker and Docker Compose installed.
 
@@ -44,17 +45,29 @@ Before setup, make sure you have:
 **1. Configure**
 ```bash
 cp .env.example .env
+chmod 600 .env
 nano .env          # Blink creds, camera name, dashboard login, timezone
 ```
 
 **2. Set the dashboard password**
 ```bash
-docker run --rm caddy:2-alpine caddy hash-password --plaintext 'your-password'
-# paste the $2a$... output into BASIC_AUTH_HASH in .env
+docker run --rm caddy:2.11.4-alpine caddy hash-password --plaintext 'your-password'
+# paste the full output between single quotes, preserving every $ literally:
+# BASIC_AUTH_HASH='$2a$14$the-rest-of-the-generated-hash'
 ```
 
-**3. Drop in the model** — see `classifier/model/README.md`. Two files:
-`classifier/model/model.tflite` and `classifier/model/labels.txt`.
+**3. Download and verify the model**
+```bash
+./scripts/download-model.sh
+```
+This verifies both pinned SHA-256 checksums, then installs the pair together as
+`classifier/model/current/model.tflite` and
+`classifier/model/current/labels.txt`. A failed update restores the previous
+complete bundle instead of leaving a mismatched pair.
+
+If you are upgrading an existing checkout that stored the two files directly
+under `classifier/model/`, rerun `./scripts/download-model.sh` once to create the
+new `current` bundle before running the preflight.
 
 **4. Authenticate to Blink (one time, interactive)**
 ```bash
@@ -64,9 +77,10 @@ docker compose run --rm puller python auth_setup.py
 # ./data/blink/creds.json. Copy the exact feeder name into CAMERA_NAME if not "all".
 ```
 
-**5. Launch**
+**5. Verify the installation, then launch**
 ```bash
-docker compose up -d --build
+./scripts/verify-install.sh --build
+docker compose up -d
 docker compose logs -f          # watch it pull + classify
 ```
 
@@ -99,7 +113,13 @@ makes it launch standalone like a native app.
 ## Running it hands-off
 
 - All services are `restart: unless-stopped`.
-- State (creds, DB, clips, dashboard data) lives on the `./data` bind mount.
+- State (creds, DB, clips, dashboard data) lives under `./data`; each container
+  receives only the subdirectories it needs.
+- Containers run as the numeric `PUID`/`PGID` from `.env` (normally `1000:1000`),
+  with read-only roots, no Linux capabilities, and separate networks.
+- Classification work is claimed as `processing`. A restart automatically
+  returns interrupted work to the queue; ordinary failures retry with backoff
+  before becoming terminal `error` rows.
 - Add the DB backup to cron: `0 3 * * * /path/to/bird-feeder/scripts/backup-db.sh`
 - Set `NTFY_URL` in `.env` to get a push notification on new visitors and — more
   importantly — on a failed pull or an expired Blink token.
@@ -110,7 +130,9 @@ makes it launch standalone like a native app.
 
 `POLL_INTERVAL` how often to check Blink · `CONFIDENCE_THRESHOLD` how sure the
 model must be to log an ID · `FRAMES_PER_CLIP` frames sampled per clip ·
-`RETAIN_DAYS` how long raw clips are kept on disk.
+`RETAIN_DAYS` how long raw clips are kept on disk · `MAX_CLIP_ATTEMPTS` failed
+attempts before a clip becomes terminal · `CLIP_RETRY_DELAY` base retry delay in
+seconds (the delay doubles after each failure).
 
 ## Handy commands
 
@@ -119,6 +141,10 @@ docker compose logs -f classifier          # tail one service
 docker compose restart puller               # bounce a service
 docker compose run --rm puller python auth_setup.py   # re-auth if the token expires
 sqlite3 data/db/feeder.sqlite 'SELECT common_name, confidence, captured_at FROM detections ORDER BY captured_at DESC LIMIT 10;'
+# inspect failed clips
+sqlite3 data/db/feeder.sqlite "SELECT filename, attempt_count, note FROM clips WHERE status = 'error';"
+# requeue failed clips after correcting the underlying problem
+sqlite3 data/db/feeder.sqlite "UPDATE clips SET status = 'pending', attempt_count = 0, next_attempt_at = NULL, processing_started_at = NULL, note = 'manually requeued' WHERE status = 'error';"
 ```
 
 ## Notes & known edges
@@ -130,6 +156,15 @@ sqlite3 data/db/feeder.sqlite 'SELECT common_name, confidence, captured_at FROM 
 - The classifier is a clean, self-contained reimplementation of the
   blink-bird-id data flow with the cloud-AI call replaced by the local model —
   no upstream fork to track.
+- MobileNetV2 is Perch's stable runtime. Its 224×224 TFLite pipeline uses
+  aspect-ratio-preserving letterbox resize, bicubic interpolation, black
+  padding, and the model's declared tensor dtype. The build preflight performs
+  a real synthetic inference so incompatible model/runtime combinations fail
+  before launch.
+- ONNX remains an experimental future option, not an installable Perch backend.
+  Evaluating it responsibly requires a separate image and dependency set,
+  model-specific input handling, a bird-cropping stage, Pi 5 memory/latency
+  benchmarks, and accuracy comparisons before it can affect the stable path.
 - The dashboard is a static export (plain HTML/CSS/JS): nothing to build, trivial
   to serve, light on the Pi. To add filtering/history later, swap the static JSON
   for a small read-only API without touching the frontend contract.

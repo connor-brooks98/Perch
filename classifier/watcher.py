@@ -30,12 +30,14 @@ log = logging.getLogger("classifier")
 CLIPS_DIR = Path(os.getenv("CLIPS_DIR", "/data/clips"))
 DB_PATH = os.getenv("DB_PATH", "/data/db/feeder.sqlite")
 WEB_DIR = Path(os.getenv("WEB_DIR", "/data/web"))
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/model/model.tflite")
-LABELS_PATH = os.getenv("LABELS_PATH", "/app/model/labels.txt")
+MODEL_PATH = os.getenv("MODEL_PATH", "/app/model/current/model.tflite")
+LABELS_PATH = os.getenv("LABELS_PATH", "/app/model/current/labels.txt")
 THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.30"))
 FRAMES_PER_CLIP = int(os.getenv("FRAMES_PER_CLIP", "4"))
 WATCH_INTERVAL = int(os.getenv("WATCH_INTERVAL", "20"))
 THUMB_WIDTH = int(os.getenv("THUMB_WIDTH", "480"))
+MAX_CLIP_ATTEMPTS = max(1, int(os.getenv("MAX_CLIP_ATTEMPTS", "3")))
+CLIP_RETRY_DELAY = max(0, int(os.getenv("CLIP_RETRY_DELAY", "60")))
 
 THUMBS_DIR = WEB_DIR / "thumbs"
 DATA_DIR = WEB_DIR / "data"
@@ -101,8 +103,7 @@ def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
     with tempfile.TemporaryDirectory() as td:
         frames = extract_frames(clip_path, FRAMES_PER_CLIP, Path(td))
         if not frames:
-            db.mark_clip(conn, clip["id"], "error", "no frames extracted")
-            return None
+            raise RuntimeError("no frames extracted")
 
         best = None
         best_frame = None
@@ -131,6 +132,44 @@ def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
         )
         log.info("clip %s -> %s (%.2f)", clip["filename"], best.common_name, best.confidence)
         return best.common_name
+
+
+def process_pending_batch(clf, conn, clips, *, processor=None) -> list[str]:
+    """Process claimed clips independently so one bad file cannot block a batch."""
+    processor = processor or process_clip
+    new_species: list[str] = []
+    for clip in clips:
+        try:
+            result = processor(clf, conn, clip)
+            if result:
+                new_species.append(result)
+        except Exception as exc:  # noqa: BLE001 — clip failures are isolated here
+            terminal = db.fail_clip(
+                conn,
+                clip["id"],
+                clip["attempt_count"],
+                str(exc),
+                max_attempts=MAX_CLIP_ATTEMPTS,
+                retry_delay_seconds=CLIP_RETRY_DELAY,
+            )
+            if terminal:
+                log.exception(
+                    "clip %s failed permanently after %d attempts",
+                    clip["filename"],
+                    clip["attempt_count"],
+                )
+                notify.failure(
+                    "classifier",
+                    f"gave up on {clip['filename']} after {clip['attempt_count']} attempts: {exc}",
+                )
+            else:
+                log.warning(
+                    "clip %s attempt %d failed; scheduled retry: %s",
+                    clip["filename"],
+                    clip["attempt_count"],
+                    exc,
+                )
+    return new_species
 
 
 def _today_count(rows) -> int:
@@ -181,6 +220,9 @@ def regenerate_json(conn) -> None:
 def run() -> None:
     WEB_DIR.mkdir(parents=True, exist_ok=True)
     conn = db.connect(DB_PATH)
+    recovered = db.recover_processing_clips(conn)
+    if recovered:
+        log.warning("recovered %d interrupted clip(s)", recovered)
     clf = BirdClassifier(MODEL_PATH, LABELS_PATH)
     log.info("model loaded (%d labels); watching every %ss", len(clf.labels), WATCH_INTERVAL)
     notify.push("classifier started", title="🐦 feeder", tags="robot")
@@ -190,13 +232,9 @@ def run() -> None:
     failures = 0
     while True:
         try:
-            pending = db.pending_clips(conn, limit=25)
+            pending = db.claim_pending_clips(conn, limit=25)
             failures = 0
-            new_species = []
-            for clip in pending:
-                result = process_clip(clf, conn, clip)
-                if result:
-                    new_species.append(result)
+            new_species = process_pending_batch(clf, conn, pending)
             if pending:
                 regenerate_json(conn)
                 idle_cycles = 0

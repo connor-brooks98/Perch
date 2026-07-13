@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Nightly SQLite backup (Phase 7). Uses the online .backup API so it's safe
 # while the classifier is writing. Add to the Pi's crontab, e.g.:
-#   0 3 * * *  /home/connor/bird-feeder/scripts/backup-db.sh
+#   0 3 * * *  /home/pi/Perch/scripts/backup-db.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

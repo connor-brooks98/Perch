@@ -1,13 +1,16 @@
 """Local bird classifier (Phase 3).
 
 Wraps the AIY/Coral iNaturalist-birds MobileNet-v2 TFLite model. Preprocessing
-mirrors whosatmyfeeder: resize to the model's input size, feed quantized uint8,
-dequantize the output to real probabilities.
+letterboxes the input (resize preserving aspect ratio, pad to the model's
+square input size with bicubic interpolation) before feeding quantized uint8,
+then dequantizes the output to real probabilities. Letterboxing avoids
+squashing/stretching non-square crops, which otherwise slightly distorts the
+bird's proportions before classification.
 
-Model files are NOT bundled. Drop these two into classifier/model/ (see the
-README there):
-    model/model.tflite    — the quantized iNat bird classifier
-    model/labels.txt      — matching labels, one per line
+Model files are NOT bundled. Install the verified pair under classifier/model/
+(see the README there):
+    model/current/model.tflite    — the quantized iNat bird classifier
+    model/current/labels.txt      — matching labels, one per line
 """
 from __future__ import annotations
 
@@ -81,8 +84,25 @@ class BirdClassifier:
                 labels[i] = text
         return labels
 
+    def _letterbox(self, image: Image.Image, padding_color: int = 0) -> Image.Image:
+        """Resize preserving aspect ratio, then pad to the model's exact
+        input size instead of stretching. A bird crop is rarely square, so a
+        plain resize distorts its proportions; letterboxing keeps the bird's
+        real shape and pads the margins instead."""
+        src_w, src_h = image.size
+        scale = min(self.width / src_w, self.height / src_h)
+        new_w = max(1, round(src_w * scale))
+        new_h = max(1, round(src_h * scale))
+        resized = image.resize((new_w, new_h), Image.Resampling.BICUBIC)
+
+        canvas = Image.new("RGB", (self.width, self.height), (padding_color,) * 3)
+        paste_x = (self.width - new_w) // 2
+        paste_y = (self.height - new_h) // 2
+        canvas.paste(resized, (paste_x, paste_y))
+        return canvas
+
     def _preprocess(self, image: Image.Image) -> np.ndarray:
-        img = image.convert("RGB").resize((self.width, self.height))
+        img = self._letterbox(image.convert("RGB"))
         arr = np.asarray(img)
         if self.inp["dtype"] == np.float32:
             arr = (np.float32(arr) - 127.5) / 127.5

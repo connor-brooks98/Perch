@@ -1,6 +1,6 @@
 """Fire-and-forget push notifications via ntfy (Phase 7 heartbeat/failure ping).
 
-Set NTFY_URL to a full topic URL, e.g. https://ntfy.sh/connor-birdfeeder-9f3a
+Set NTFY_URL to a full topic URL, e.g. https://ntfy.sh/perch-long-random-topic-name
 Leave it unset and every call becomes a silent no-op, so the pipeline runs
 fine without monitoring configured.
 """
