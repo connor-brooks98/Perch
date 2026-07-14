@@ -16,6 +16,8 @@ inference dependencies.
 Budget about two hours the first time. You only need to complete this setup
 once.
 
+Remote dashboard access is optional. The Pi needs outbound internet access for Blink and installation downloads.
+
 ---
 
 ## What you need before you start
@@ -171,12 +173,13 @@ Save with `Ctrl + O`, press Enter, and exit with `Ctrl + X`.
 
 ### 4b. Set the dashboard password
 
-Replace `your-password` with a password you will remember.
+Choose a dashboard password you will remember. The following command asks for
+it at a hidden prompt, so the password is not echoed or placed in the command.
 
 **Run on the Raspberry Pi:**
 
 ```bash
-docker run --rm caddy:2.11.4-alpine caddy hash-password --plaintext 'your-password'
+docker run --rm -it caddy:2.11.4-alpine caddy hash-password
 ```
 
 Copy the entire generated hash, which starts with `$2a$`, `$2b$`, or `$2y$`.
@@ -303,8 +306,8 @@ Perch.
 
 ## Part 8: Optional remote phone access
 
-By default, the dashboard works only on your home Wi-Fi. Tailscale can provide
-remote access.
+By default, the dashboard works only on your home Wi-Fi. Tailscale Serve is the
+recommended way to add remote access while keeping the dashboard private to your tailnet.
 
 Install Tailscale and follow the sign-in link it prints.
 
@@ -320,11 +323,16 @@ Enable access to the dashboard.
 **Run on the Raspberry Pi:**
 
 ```bash
-sudo tailscale funnel 8080
+sudo tailscale serve --bg 8080
 ```
 
 Install the Tailscale app on your phone, sign into the same account, and open
-the `https://....ts.net` address that Tailscale provides.
+the `https://....ts.net` address that Tailscale provides. The `--bg` flag keeps
+Serve active after you close the terminal and across Pi restarts.
+
+Tailscale Funnel makes the dashboard public to the internet, including to
+people who are not signed into your tailnet. Do not use Funnel for ordinary
+private phone access.
 
 ---
 

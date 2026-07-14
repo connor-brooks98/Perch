@@ -14,8 +14,8 @@ birds on your own hardware, and serves a password-protected field-log dashboard.
 - Bird identification runs locally; clips are not sent to an AI API.
 - Raspberry Pi 5 with Raspberry Pi OS Lite 64-bit is the primary and tested installation path.
 - Other 64-bit machines that run Linux Docker containers may work as an advanced installation.
-- A dedicated Blink account and active Blink subscription are currently required.
-- The dashboard works on a home network by default; internet access is optional.
+- A dedicated Blink account is strongly recommended; an active Blink subscription is required.
+- Remote dashboard access is optional. The Pi needs outbound internet access for Blink and installation downloads.
 
 Perch uses TensorFlow Lite (TFLite), a lightweight local model runtime, for bird
 identification.
@@ -29,7 +29,8 @@ Blink cloud ──> puller ──> clips volume ──> classifier ──> SQLit
 
 Before setup, make sure you have:
 
-- A dedicated Blink account with the feeder camera added to it.
+- A dedicated Blink account with the feeder camera added to it. This is strongly
+  recommended to prevent session conflicts with a personal Blink login.
 - An active Blink subscription so clips appear in Blink's cloud-media feed.
   Sync Module 2 local-storage downloading uses a different API and is not yet
   implemented by Perch.
@@ -56,11 +57,12 @@ and Docker Compose. Everyone else should use the
 2. Generate a bcrypt password hash and save it as `BASIC_AUTH_HASH` in `.env`:
 
    ```bash
-   docker run --rm caddy:2.11.4-alpine caddy hash-password --plaintext 'your-password'
+   docker run --rm -it caddy:2.11.4-alpine caddy hash-password
    ```
 
-   Preserve every literal `$` from the generated hash and keep the complete
-   value between single quotes:
+   Enter the dashboard password at the hidden prompt; Caddy does not echo it.
+   Preserve every literal `$` from the generated hash, do not double any `$`,
+   and keep the complete value between single quotes:
 
    ```dotenv
    BASIC_AUTH_HASH='$2a$14$the-rest-of-the-generated-hash'
@@ -181,14 +183,18 @@ docker compose up -d
 The dashboard listens on port `8080` and is protected by `basic_auth`. Remote
 access is not required for use on the home network.
 
-With Tailscale Funnel:
+Tailscale Serve is the recommended private option. It keeps the dashboard
+private to your tailnet, so only signed-in devices allowed by that tailnet can
+reach it. Configure it to persist across terminal sessions and Pi restarts:
 
 ```bash
-sudo tailscale funnel 8080
+sudo tailscale serve --bg 8080
 ```
 
 This provides an `https://<pi>.<tailnet>.ts.net` address. On a phone, open the
-address, log in, and use **Add to Home Screen**.
+Tailscale app, sign into the same tailnet, open the address, log in to Perch,
+and use **Add to Home Screen**. Tailscale Funnel makes the dashboard public to
+the internet; do not use Funnel for ordinary private phone access.
 
 With Cloudflare Tunnel, set `CLOUDFLARE_TUNNEL_TOKEN` in `.env`, point a hostname
 at `http://web:8080`, then start the tunnel overlay:
@@ -205,8 +211,10 @@ authentication.
 - Bird identification happens on your hardware; Perch does not send clips to
   an AI API. Blink cloud storage is still involved in the current clip-download
   path.
-- Use a dedicated Blink account. Sharing a personal login can conflict with
-  Blink's two-factor authentication and session handling.
+- A dedicated Blink account is strongly recommended. Sharing a personal login
+  can cause session conflicts with Blink's app, two-factor authentication, and
+  session handling. An active Blink subscription is required for Perch's
+  current cloud-media download path.
 - Keep `.env` private and restricted with `chmod 600 .env`.
 - Containers run as the numeric `PUID`/`PGID` from `.env`, with read-only root
   filesystems, no Linux capabilities, narrow mounts, and separate networks.

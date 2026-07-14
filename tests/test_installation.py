@@ -270,6 +270,41 @@ class InstallationContractTests(unittest.TestCase):
         self.assertIn("Blink subscription", documents)
         self.assertIn("scripts/download-model.sh", documents)
 
+    def test_docs_recommend_private_tailscale_serve_for_remote_access(self) -> None:
+        for relative_path in ("README.md", "Perch_Installation_Guide.md"):
+            document = read(relative_path)
+            self.assertIn("sudo tailscale serve --bg 8080", document, relative_path)
+            self.assertIn("private to your tailnet", document, relative_path)
+            self.assertIn("Funnel makes the dashboard public", document, relative_path)
+            self.assertNotIn("tailscale funnel 8080", document, relative_path)
+
+    def test_docs_hash_dashboard_password_at_a_hidden_interactive_prompt(self) -> None:
+        documents = "\n".join([read("README.md"), read("Perch_Installation_Guide.md")])
+        expected_command = (
+            "docker run --rm -it caddy:2.11.4-alpine caddy hash-password"
+        )
+        self.assertEqual(documents.count(expected_command), 2)
+        self.assertNotIn("hash-password --plaintext", documents)
+        self.assertEqual(documents.count("hidden prompt"), 2)
+        self.assertEqual(documents.count("do not double"), 2)
+
+    def test_readme_recommends_a_dedicated_account_but_requires_subscription(self) -> None:
+        readme = read("README.md")
+        self.assertIn("dedicated Blink account is strongly recommended", readme)
+        self.assertIn("active Blink subscription is required", readme)
+        self.assertIn("session conflicts", readme)
+
+    def test_docs_require_outbound_internet_but_not_remote_dashboard_access(self) -> None:
+        documents = "\n".join([read("README.md"), read("Perch_Installation_Guide.md")])
+        self.assertNotIn("internet access is optional", documents)
+        self.assertEqual(documents.count("Remote dashboard access is optional"), 2)
+        self.assertEqual(
+            documents.count(
+                "Pi needs outbound internet access for Blink and installation downloads"
+            ),
+            2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
