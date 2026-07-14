@@ -33,6 +33,14 @@ def bash_block_labels(document: str) -> list[str]:
 
 
 class InstallationContractTests(unittest.TestCase):
+    def test_puller_uses_current_blink_oauth_flow(self) -> None:
+        requirements = read("puller/requirements.txt")
+        auth_setup = read("puller/auth_setup.py")
+        self.assertIn("blinkpy==0.25.7", requirements)
+        self.assertIn("BlinkTwoFARequiredError", auth_setup)
+        self.assertIn("await blink.send_2fa_code(code)", auth_setup)
+        self.assertNotIn("check_key_required", auth_setup)
+
     def test_primary_pi_guide_installs_and_verifies_sqlite_cli(self) -> None:
         guide = read("Perch_Installation_Guide.md")
         documents = "\n".join([read("README.md"), guide])
@@ -111,7 +119,6 @@ class InstallationContractTests(unittest.TestCase):
 
     def test_network_dependencies_are_bounded_below_next_major(self) -> None:
         requirements = read("puller/requirements.txt")
-        self.assertIn("blinkpy==0.23.0", requirements)
         self.assertRegex(requirements, r"aiohttp[^\n]*<4")
         self.assertRegex(requirements, r"requests[^\n]*<3")
 

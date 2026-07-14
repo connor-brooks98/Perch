@@ -241,7 +241,7 @@ versions stored files directly in `classifier/model/`; current versions use
 ## Part 5: Authenticate with Blink
 
 This one-time step signs the Pi into the dedicated Blink account. Blink will
-email a verification code.
+send a verification code by email or text message.
 
 **Run on the Raspberry Pi:**
 
@@ -250,8 +250,8 @@ docker compose build puller
 docker compose run --rm puller python auth_setup.py
 ```
 
-Enter the emailed code when prompted. The command then prints the camera names
-available to the account. If the intended name does not exactly match
+Enter the code when prompted. The command then prints the camera names available
+to the account. If the intended name does not exactly match
 `CAMERA_NAME` in `.env`, reopen `.env`, correct it, save, and exit.
 
 **Checkpoint:** Authentication is accepted and the command prints the feeder

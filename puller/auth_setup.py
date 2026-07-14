@@ -5,9 +5,9 @@ persist a credentials file the puller can reuse headlessly afterwards.
 
     docker compose run --rm puller python auth_setup.py
 
-Blink emails a 2FA code on login; enter it when prompted. The resulting
-creds file lands on the persistent /data volume so the token survives
-container restarts.
+Blink sends a 2FA code on login; enter it when prompted. The resulting creds
+file lands on the persistent /data volume so the token survives container
+restarts.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import os
 import sys
 
 from aiohttp import ClientSession
-from blinkpy.auth import Auth
+from blinkpy.auth import Auth, BlinkTwoFARequiredError
 from blinkpy.blinkpy import Blink
 
 CREDS_PATH = os.getenv("BLINK_CREDS", "/data/blink/creds.json")
@@ -38,13 +38,18 @@ async def main() -> int:
             no_prompt=True,
             session=session,
         )
-        started = await blink.start()
+        try:
+            started = await blink.start()
+        except BlinkTwoFARequiredError:
+            code = input("Enter the 2FA code Blink just sent you: ").strip()
+            started = await blink.send_2fa_code(code)
+
         if not started:
             print(
-                "\nBlink rejected the login (see 'Login endpoint failed' / "
-                "'Cannot setup Blink platform' above). This is almost always one of:\n"
+                "\nBlink rejected the login or verification code. This is usually one of:\n"
                 "  - BLINK_USERNAME / BLINK_PASSWORD in .env don't match a real Blink login\n"
                 "  - This account hasn't verified its email yet (check the Blink welcome email)\n"
+                "  - The 2FA code expired or was entered incorrectly\n"
                 "  - Blink is temporarily rate-limiting this account/IP after repeated attempts\n"
                 "    (wait 15-20 minutes, then try again)\n"
                 "Confirm the same email/password logs in from the Blink app itself, fix "
@@ -52,11 +57,6 @@ async def main() -> int:
                 file=sys.stderr,
             )
             return 1
-
-        if blink.auth.check_key_required():
-            code = input("Enter the 2FA code Blink just emailed you: ").strip()
-            await blink.auth.send_auth_key(blink, code)
-            await blink.setup_post_verify()
 
         await blink.refresh()
         cameras = list(blink.cameras.keys())
