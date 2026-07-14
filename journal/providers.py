@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import time
 import warnings
@@ -108,9 +109,15 @@ class ProviderClient:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         raise_failures: bool = False,
+        user_agent_contact: str | None = None,
     ) -> None:
         self.session = session or requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
+        contact = user_agent_contact
+        if contact is None:
+            contact = os.getenv("PROVIDER_USER_AGENT_CONTACT", "")
+        contact = " ".join(str(contact).split())[:200]
+        agent = USER_AGENT if not contact else f"{USER_AGENT}; contact: {contact}"
+        self.session.headers.update({"User-Agent": agent})
         self._rate_gate = RateGate(clock=clock, sleep=sleep)
         self._raise_failures = raise_failures
 
@@ -257,6 +264,8 @@ class ProviderClient:
             ):
                 temporary_path.unlink(missing_ok=True)
                 return None
+            finally:
+                temporary_path.unlink(missing_ok=True)
             return ReferenceImage(
                 path=destination_path,
                 creator=photo.creator,

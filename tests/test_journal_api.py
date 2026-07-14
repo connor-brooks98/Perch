@@ -26,6 +26,7 @@ class JournalApiTests(unittest.TestCase):
         self.db_path = root / "feeder.sqlite"
         self.labels_path = root / "labels.txt"
         self.labels_path.write_text(LABELS, encoding="utf-8")
+        db.initialize(self.db_path)
         conn = db.connect(self.db_path)
         try:
             self.blue_jay_id = self.add_detection(
@@ -332,6 +333,22 @@ class JournalApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         connect.assert_called_once_with(str(self.db_path), timeout_seconds=0.05)
+
+    def test_health_read_succeeds_while_wal_writer_holds_immediate_transaction(self) -> None:
+        writer = db.connect(self.db_path)
+        try:
+            writer.execute("BEGIN IMMEDIATE")
+            writer.execute(
+                "INSERT INTO state(key, value) VALUES('writer-test', 'pending')"
+            )
+
+            response = self.client.get("/api/health")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json, {"status": "ok"})
+        finally:
+            writer.rollback()
+            writer.close()
 
     def test_unexpected_errors_are_sanitized_in_response_and_logs(self) -> None:
         secret = "secret-token-that-must-not-leak"

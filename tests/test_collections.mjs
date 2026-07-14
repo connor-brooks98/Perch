@@ -76,6 +76,46 @@ test("history requests filter updates and appends older visits", async () => {
   assert.equal(cursors[0][1].children.length, 1);
 });
 
+test("Favorites paginates and removes only successfully unfavorited cards", async () => {
+  const {view, status} = installDom();
+  const {renderFavorites, appendFavorites} = await import("../web/site/views/favorites.js");
+  const calls = [];
+  const favoriteActions = {
+    onToggleFavorite: async (visit, favorite) => {
+      calls.push([visit.id, favorite]);
+      if (visit.id === 22) throw new Error("offline");
+      return {...visit, favorite};
+    },
+  };
+  renderFavorites(view, {
+    detections: Array.from({length: 20}, (_, index) => detection({id: index + 1, favorite: true})),
+    next_cursor: "older-favorites",
+  }, {
+    ...favoriteActions,
+    onLoadMore: (cursor, grid, button) => {
+      assert.equal(cursor, "older-favorites");
+      appendFavorites(grid, [
+        detection({id: 21, favorite: true}),
+        detection({id: 22, favorite: true}),
+      ], favoriteActions);
+      button.remove();
+    },
+  });
+
+  assert.equal(view.querySelectorAll(".visit-card").length, 20);
+  await view.querySelector("[data-load-more]").dispatch("click");
+  assert.equal(view.querySelectorAll(".visit-card").length, 22);
+
+  const cards = view.querySelectorAll(".visit-card");
+  await cards[20].querySelector(".favorite-button").dispatch("click");
+  assert.equal(view.querySelectorAll(".visit-card").length, 21);
+  await cards[21].querySelector(".favorite-button").dispatch("click");
+  assert.equal(view.querySelectorAll(".visit-card").length, 21);
+  assert.equal(cards[21].querySelector(".favorite-button").getAttribute("aria-pressed"), "true");
+  assert.match(status.textContent, /not saved/);
+  assert.deepEqual(calls, [[21, false], [22, false]]);
+});
+
 test("My Birds renders server new state and encoded profile links", async () => {
   const {view} = installDom();
   const {renderBirds} = await import("../web/site/views/birds.js");

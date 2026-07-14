@@ -218,6 +218,7 @@ def regenerate_json(conn) -> None:
 
 def run() -> None:
     WEB_DIR.mkdir(parents=True, exist_ok=True)
+    db.initialize(DB_PATH)
     conn = db.connect(DB_PATH)
     recovered = db.recover_processing_clips(conn)
     if recovered:

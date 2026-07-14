@@ -26,6 +26,7 @@ class EnrichmentApiTests(unittest.TestCase):
         self.db_path = root / "feeder.sqlite"
         labels_path = root / "labels.txt"
         labels_path.write_text(LABELS, encoding="utf-8")
+        db.initialize(self.db_path)
         conn = db.connect(self.db_path)
         try:
             self.add_detection(conn, "2026-07-13T14:00:00Z")
@@ -87,6 +88,26 @@ class EnrichmentApiTests(unittest.TestCase):
             scientific="Cyanocitta cristata",
             cached_profile={"status": "pending"},
         )
+
+    def test_common_only_species_has_terminal_local_only_enrichment(self) -> None:
+        conn = db.connect(self.db_path)
+        try:
+            clip_id = db.add_clip(
+                conn, "house-sparrow.mp4", "feeder", "2026-07-12T15:00:00Z"
+            )
+            db.add_detection(
+                conn, clip_id, "House Sparrow", None, 0.88,
+                "2026-07-12T15:00:00Z", f"thumbs/{clip_id}.jpg", f"images/{clip_id}.jpg",
+            )
+        finally:
+            conn.close()
+
+        response = self.client.get("/api/species/common%3Ahouse%20sparrow")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["enrichment"]["status"], "unavailable")
+        self.service.get.assert_not_called()
+        self.service.schedule.assert_not_called()
 
     def test_scheduling_failure_never_replaces_local_species_data(self) -> None:
         self.service.get.return_value = {
@@ -189,7 +210,7 @@ class EnrichmentApiTests(unittest.TestCase):
     def test_contended_real_cache_is_tightly_bounded_and_local_data_stays_200(self) -> None:
         root = Path(self.temporary.name)
         cache_path = root / "contended-enrichment.sqlite"
-        db.connect(cache_path).close()
+        db.initialize(cache_path)
         real_service = EnrichmentService(cache_path, root / "real-enrichment")
         self.app.extensions["enrichment"] = real_service
         self.app.config["ENRICHMENT_DB_TIMEOUT_SECONDS"] = 0.01

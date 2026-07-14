@@ -149,6 +149,7 @@ async def poll_once(blink: Blink, conn) -> int:
 
 async def run() -> None:
     CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+    db.initialize(DB_PATH)
     conn = db.connect(DB_PATH)
     cycle = 0
 

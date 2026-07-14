@@ -180,6 +180,11 @@ class ProviderFailureTests(unittest.TestCase):
 
 
 class ProviderMatchTests(unittest.TestCase):
+    def test_configurable_user_agent_contact_is_added_without_secrets(self):
+        session = FakeSession([])
+        ProviderClient(session=session, user_agent_contact="admin@example.test")
+        self.assertIn("admin@example.test", session.headers["User-Agent"])
+
     def make_client(self, payload=INAT_MATCH):
         session = FakeSession([FakeResponse(json_data=payload)])
         return ProviderClient(session=session, clock=lambda: 0, sleep=lambda _: None), session
@@ -431,6 +436,21 @@ class ImageDownloadTests(unittest.TestCase):
             destination = Path(temporary) / "bird.jpg"
             self.assertIsNone(client.download_reference_image(self.PHOTO, destination))
             self.assertFalse(destination.exists())
+
+    def test_save_failure_removes_partial_temporary_jpeg(self):
+        client, _ = self.client([FakeResponse(chunks=[jpeg_bytes()])])
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "bird.jpg"
+
+            def partial_save(_image, path, **_kwargs):
+                Path(path).write_bytes(b"partial")
+                raise OSError("disk full")
+
+            with mock.patch.object(Image.Image, "save", autospec=True, side_effect=partial_save):
+                self.assertIsNone(client.download_reference_image(self.PHOTO, destination))
+
+            self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_suffix(".jpg.tmp").exists())
 
     def test_resizes_to_960px_and_publishes_atomically(self):
         data = jpeg_bytes((1920, 1200))

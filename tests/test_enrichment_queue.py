@@ -66,7 +66,7 @@ class EnrichmentServiceTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.db_path = self.root / "feeder.sqlite"
         self.image_dir = self.root / "enrichment"
-        db.connect(self.db_path).close()
+        db.initialize(self.db_path)
         self.provider = FakeProvider()
         self.service = EnrichmentService(
             self.db_path,

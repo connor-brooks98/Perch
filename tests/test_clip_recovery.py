@@ -21,6 +21,7 @@ class ClipRecoveryTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def connect(self) -> sqlite3.Connection:
+        db.initialize(self.db_path)
         conn = db.connect(self.db_path)
         self.connections.append(conn)
         return conn

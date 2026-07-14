@@ -43,6 +43,7 @@ class WatcherRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        db.initialize(self.root / "feeder.sqlite")
         self.conn = db.connect(self.root / "feeder.sqlite")
 
     def tearDown(self) -> None:

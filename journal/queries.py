@@ -14,6 +14,7 @@ from journal.labels import LabelCatalog
 
 MAX_PAGE_SIZE = 100
 _ENRICHMENT_IMAGE_RE = re.compile(r"^[0-9a-f]{24}-[0-9a-f]{32}\.jpg$")
+_CANONICAL_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 EFFECTIVE_SQL = """
 SELECT d.*, COALESCE(NULLIF(a.corrected_common_name,''), d.common_name) AS effective_common,
@@ -123,7 +124,11 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
             or row_id < 1
         ):
             raise ValueError
-        datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+        if not _CANONICAL_UTC_RE.fullmatch(captured_at):
+            raise ValueError
+        parsed = datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%SZ")
+        if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != captured_at:
+            raise ValueError
         return captured_at, row_id
     except Exception as exc:
         raise InvalidCursor("malformed cursor") from exc
@@ -319,21 +324,44 @@ def today(
     zone = _zone(tz_name)
     local_now = _utc_now().astimezone(zone)
     start, end = _day_bounds(local_now.date(), tz_name)
-    all_rows = _effective_rows(conn)
-    today_rows = [row for row in all_rows if start <= row["captured_at"] < end]
+    _register_sql_functions(conn)
+    rows = conn.execute(
+        f"SELECT * FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0 "
+        "ORDER BY e.captured_at DESC, e.id DESC LIMIT ?",
+        (bounded + 1,),
+    ).fetchall()
+    has_more = len(rows) > bounded
+    recent_rows = rows[:bounded]
+    latest_row = recent_rows[0] if recent_rows else None
+
+    totals = conn.execute(
+        f"SELECT COUNT(*) AS visits, COUNT(DISTINCT "
+        "journal_species_key(e.effective_common, e.effective_scientific)) AS species "
+        f"FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0 "
+        "AND e.captured_at >= ? AND e.captured_at < ?",
+        (start, end),
+    ).fetchone()
+    hour_rows = conn.execute(
+        f"SELECT journal_local_hour(e.captured_at, ?) AS hour, COUNT(*) AS visits "
+        f"FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0 "
+        "AND e.captured_at >= ? AND e.captured_at < ? "
+        "GROUP BY hour ORDER BY hour",
+        (tz_name, start, end),
+    ).fetchall()
     hours = [0] * 24
-    for row in today_rows:
-        captured = datetime.fromisoformat(row["captured_at"].replace("Z", "+00:00"))
-        hours[captured.astimezone(zone).hour] += 1
-    busiest = max(range(24), key=lambda hour: hours[hour]) if today_rows else None
-    recent = all_rows[:bounded]
-    latest = _serialize_detection(all_rows[0]) if all_rows else None
+    for row in hour_rows:
+        hours[row["hour"]] = row["visits"]
+    visits_today = totals["visits"]
+    busiest = max(range(24), key=lambda hour: hours[hour]) if visits_today else None
+    latest = _serialize_detection(latest_row) if latest_row else None
     if latest:
-        latest["is_first_visit"] = sum(
-            species_key(row["effective_common"], row["effective_scientific"])
-            == latest["species_key"]
-            for row in all_rows
-        ) == 1
+        earlier = conn.execute(
+            f"SELECT 1 FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0 "
+            "AND e.id <> ? AND journal_species_key("
+            "e.effective_common, e.effective_scientific) = ? LIMIT 1",
+            (latest["id"], latest["species_key"]),
+        ).fetchone()
+        latest["is_first_visit"] = earlier is None
     day_part = (
         "morning"
         if local_now.hour < 12
@@ -344,17 +372,12 @@ def today(
     return {
         "greeting": f"Good {day_part} from the feeder.",
         "latest": latest,
-        "visits_today": len(today_rows),
-        "species_today": len(
-            {
-                species_key(row["effective_common"], row["effective_scientific"])
-                for row in today_rows
-            }
-        ),
+        "visits_today": visits_today,
+        "species_today": totals["species"],
         "busiest_hour": busiest,
         "hourly_activity": hours,
-        "recent": [_serialize_detection(row) for row in recent],
-        "has_more": len(all_rows) > bounded,
+        "recent": [_serialize_detection(row) for row in recent_rows],
+        "has_more": has_more,
     }
 
 
@@ -496,12 +519,13 @@ def species_detail(
 
 
 def mark_species_opened(conn: sqlite3.Connection, species_key: str) -> bool:
-    exists = any(
-        globals()["species_key"](row["effective_common"], row["effective_scientific"])
-        == species_key
-        for row in _effective_rows(conn)
-    )
-    if not exists:
+    _register_sql_functions(conn)
+    exists = conn.execute(
+        f"SELECT 1 FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0 AND "
+        "journal_species_key(e.effective_common, e.effective_scientific) = ? LIMIT 1",
+        (species_key,),
+    ).fetchone()
+    if exists is None:
         return False
     with conn:
         conn.execute(

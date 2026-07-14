@@ -29,6 +29,7 @@ class JournalQueryTests(unittest.TestCase):
         labels_path = root / "labels.txt"
         labels_path.write_text(LABELS, encoding="utf-8")
         self.catalog = LabelCatalog.from_file(labels_path)
+        db.initialize(self.db_path)
         self.conn = db.connect(self.db_path)
 
     def tearDown(self) -> None:
@@ -380,6 +381,38 @@ class JournalQueryTests(unittest.TestCase):
                     local_date=None,
                     tz_name="America/New_York",
                 )
+
+    def test_cursor_requires_canonical_utc_z_timestamp(self) -> None:
+        malformed = [
+            queries._encode_cursor({"captured_at": "2026-07-13T12:00:00+00:00", "id": 1}),
+            queries._encode_cursor({"captured_at": "2026-07-13T08:00:00-04:00", "id": 1}),
+            queries._encode_cursor({"captured_at": "2026-07-13T12:00:00.000Z", "id": 1}),
+        ]
+        for cursor in malformed:
+            with self.subTest(cursor=cursor), self.assertRaises(queries.InvalidCursor):
+                queries.detections(
+                    self.conn, cursor=cursor, limit=20, species_key=None,
+                    favorite=None, local_date=None, tz_name="America/New_York",
+                )
+
+    def test_today_and_mark_opened_do_not_materialize_lifetime_rows(self) -> None:
+        for index in range(30):
+            self.add_detection(captured_at=f"2026-07-{10 + index // 24:02d}T{index % 24:02d}:00:00Z")
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            summary = queries.today(self.conn, "America/New_York", recent_limit=3)
+            key = queries.species_key("Blue Jay", "Cyanocitta cristata")
+            self.assertTrue(queries.mark_species_opened(self.conn, key))
+        finally:
+            self.conn.set_trace_callback(None)
+
+        self.assertEqual(len(summary["recent"]), 3)
+        self.assertTrue(summary["has_more"])
+        self.assertFalse(any(
+            "ORDER BY e.captured_at DESC, e.id DESC" in sql and "LIMIT" not in sql
+            for sql in statements
+        ))
 
     def test_local_date_filter_handles_midnight_and_dst_fallback(self) -> None:
         before_midnight = self.add_detection(captured_at="2026-07-13T03:59:59Z")

@@ -50,6 +50,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     app.config.from_mapping(DEFAULTS)
     if config:
         app.config.update(config)
+    db.initialize(app.config["DB_PATH"])
     catalog = LabelCatalog.from_file(app.config["LABELS_PATH"])
     provider = app.config.get("ENRICHMENT_PROVIDER")
     enrichment = EnrichmentService(
@@ -238,23 +239,27 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         result = run_query(load_and_mark)
         if result is None:
             return error("not_found", 404)
-        try:
-            profile = app.extensions["enrichment"].get(
-                species_key,
-                timeout_seconds=app.config["ENRICHMENT_DB_TIMEOUT_SECONDS"],
-            )
-        except Exception:
-            log.warning(
-                "species_enrichment_failure category=cache species_key=%s",
-                species_key,
-            )
-            profile = {"status": "pending"}
+        if not result.get("scientific"):
+            profile = {"status": "unavailable"}
+        else:
+            try:
+                profile = app.extensions["enrichment"].get(
+                    species_key,
+                    timeout_seconds=app.config["ENRICHMENT_DB_TIMEOUT_SECONDS"],
+                )
+            except Exception:
+                log.warning(
+                    "species_enrichment_failure category=cache species_key=%s",
+                    species_key,
+                )
+                profile = {"status": "pending"}
         status = profile.get("status") if isinstance(profile, dict) else None
         if not isinstance(status, str) or status not in {
             "pending",
             "ready",
             "stale",
             "failed",
+            "unavailable",
         }:
             profile = {"status": "pending"}
         if profile["status"] in {"pending", "stale"}:

@@ -18,27 +18,43 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def connect(db_path: str | Path, *, timeout_seconds: float = 5) -> sqlite3.Connection:
-    """Open (and initialise, if needed) the shared database."""
+def _open(db_path: str | Path, *, timeout_seconds: float) -> sqlite3.Connection:
     db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     timeout = float(timeout_seconds)
     if timeout < 0:
         raise ValueError("timeout must not be negative")
     busy_timeout_ms = int(timeout * 1000)
     conn = sqlite3.connect(str(db_path), timeout=timeout)
-    conn.row_factory = sqlite3.Row
-    # Keep these runtime pragmas explicit on every connection; schema.sql also
-    # carries them, but this makes the concurrency settings resilient to future
-    # schema/init refactors.
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.executescript(SCHEMA_PATH.read_text())
-    _migrate_clips(conn)
-    _migrate_detections(conn)
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
+    except BaseException:
+        conn.close()
+        raise
+
+
+def initialize(db_path: str | Path, *, timeout_seconds: float = 5) -> None:
+    """Create/migrate the shared database once during service startup."""
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open(path, timeout_seconds=timeout_seconds)
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.executescript(SCHEMA_PATH.read_text())
+        _migrate_clips(conn)
+        _migrate_detections(conn)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def connect(db_path: str | Path, *, timeout_seconds: float = 5) -> sqlite3.Connection:
+    """Open an initialized database using connection-local runtime settings."""
+    return _open(db_path, timeout_seconds=timeout_seconds)
 
 
 def _migrate_clips(conn: sqlite3.Connection) -> None:

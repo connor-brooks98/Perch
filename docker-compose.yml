@@ -98,6 +98,7 @@ services:
       LABELS_PATH: /app/model/labels.txt
       TZ: ${TZ:-America/New_York}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROVIDER_USER_AGENT_CONTACT: ${PROVIDER_USER_AGENT_CONTACT:-}
     user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
       - ./data/db:/data/db

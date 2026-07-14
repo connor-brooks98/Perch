@@ -2,7 +2,7 @@ import {startRouter} from "./router.js";
 import {getDetection, getDetections, getSpecies, getSpeciesDetail, getToday, patchDetection, searchTaxa} from "./api.js";
 import {inlineError, showStatus} from "./components.js";
 import {renderBirds} from "./views/birds.js";
-import {renderFavorites} from "./views/favorites.js";
+import {appendFavorites, renderFavorites} from "./views/favorites.js";
 import {appendHistoryVisits, renderHistory} from "./views/history.js";
 import {appendSpeciesGallery, renderSpecies} from "./views/species.js";
 import {renderToday} from "./views/today.js";
@@ -115,7 +115,23 @@ async function loadFavorites(version) {
   try {
     const data = await getDetections({favorite: true});
     if (version !== renderVersion) return;
-    renderFavorites(view, data, visitActions);
+    renderFavorites(view, data, {
+      ...visitActions,
+      onLoadMore: async (cursor, grid, button) => {
+        button.disabled = true;
+        try {
+          const page = await getDetections({favorite: true, cursor});
+          appendFavorites(grid, page.detections || [], visitActions);
+          if (page.next_cursor) {
+            button.dataset.cursor = page.next_cursor;
+            button.disabled = false;
+          } else button.remove();
+        } catch (_error) {
+          button.disabled = false;
+          showStatus("Older favorites could not be loaded. Try again.");
+        }
+      },
+    });
   } catch (_error) {
     if (version !== renderVersion) return;
     showLoadError("Favorites could not be loaded.", () => loadFavorites(version));

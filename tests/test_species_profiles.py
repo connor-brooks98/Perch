@@ -12,6 +12,7 @@ class SpeciesProfileTests(unittest.TestCase):
     def test_species_profile_schema_is_repeatable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "feeder.sqlite"
+            db.initialize(path)
             conn = db.connect(path)
             columns = {
                 row["name"]
@@ -32,7 +33,7 @@ class SpeciesProfileTests(unittest.TestCase):
             )
             conn.close()
 
-            db.connect(path).close()
+            db.initialize(path)
 
     def test_species_key_normalizes_whitespace_and_case(self) -> None:
         self.assertEqual(

@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from common import db
 
@@ -65,6 +66,7 @@ class JournalSchemaTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
+        db.initialize(path)
         migrated = self.connect(path)
         row = migrated.execute("SELECT * FROM detections").fetchone()
 
@@ -79,13 +81,34 @@ class JournalSchemaTests(unittest.TestCase):
 
     def test_migration_is_repeatable(self) -> None:
         path = self.root / "feeder.sqlite"
+        db.initialize(path)
         first = self.connect(path)
         first.close()
         self.connections.remove(first)
 
+        db.initialize(path)
         second = self.connect(path)
 
         self.assertEqual(second.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_runtime_connect_does_not_rerun_schema_or_migrations(self) -> None:
+        path = self.root / "feeder.sqlite"
+        db.initialize(path)
+        with mock.patch("pathlib.Path.read_text", side_effect=AssertionError("schema rerun")):
+            conn = self.connect(path)
+            self.assertEqual(conn.execute("SELECT 1").fetchone()[0], 1)
+
+    def test_initialization_failure_closes_its_connection(self) -> None:
+        path = self.root / "broken.sqlite"
+        connection = sqlite3.connect(path)
+        connection.row_factory = sqlite3.Row
+        with mock.patch("common.db._open", return_value=connection), mock.patch(
+            "common.db._migrate_clips", side_effect=RuntimeError("migration failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "migration failed"):
+                db.initialize(path)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
 
 
 if __name__ == "__main__":
