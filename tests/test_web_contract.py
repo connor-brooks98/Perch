@@ -82,9 +82,10 @@ class WebContractTests(unittest.TestCase):
         match = re.search(r"const SHELL = (\[[^;]+\]);", source)
         self.assertIsNotNone(match)
         shell = set(json.loads(match.group(1)))
+        site = ROOT / "web/site"
         modules = {
-            path.name
-            for path in (ROOT / "web/site").glob("*.js")
+            path.relative_to(site).as_posix()
+            for path in site.rglob("*.js")
             if path.name != "sw.js"
         }
         required = {
@@ -223,6 +224,41 @@ class WebContractTests(unittest.TestCase):
         self.assertIn('from "./router.js"', app)
         self.assertIn("startRouter", app)
         self.assertIn("route.name", app)
+
+    def test_today_view_contract(self):
+        self.assertTrue((ROOT / "web/site/views/today.js").is_file())
+        source = read("web/site/views/today.js")
+        components = read("web/site/components.js")
+        app = read("web/site/app.js")
+        styles = read("web/site/styles.css")
+
+        for field in (
+            "greeting",
+            "latest",
+            "visits_today",
+            "species_today",
+            "busiest_hour",
+            "hourly_activity",
+            "recent",
+        ):
+            self.assertIn(field, source)
+        self.assertIn("Add ${species} visit to favorites", components)
+        self.assertIn("Remove ${species} visit from favorites", components)
+        self.assertIn('setAttribute("aria-pressed"', components)
+        self.assertIn('addEventListener("error"', components)
+        self.assertIn("Wrong bird?", components)
+        self.assertIn(
+            "The first identified visitor will appear here automatically.", source
+        )
+        self.assertIn("Retry", components)
+        self.assertIn("renderToday", app)
+        self.assertIn("retry", app)
+        self.assertIn("display_image", source)
+        self.assertIn("thumbnail", source)
+        self.assertIn("aspect-ratio: 4 / 3", styles)
+        self.assertIn("--page-max: 72rem", styles)
+        self.assertIn("@media (min-width: 48rem)", styles)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
 
     def test_format_module_exposes_shared_journal_formatters(self):
         result = run_javascript(
