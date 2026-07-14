@@ -426,6 +426,29 @@ class JournalQueryTests(unittest.TestCase):
         self.assertEqual(summary["busiest_hour"], 1)
         self.assertEqual(summary["hourly_activity"][1], 2)
 
+    def test_today_latest_status_uses_lifetime_effective_species_history(self) -> None:
+        self.add_detection(captured_at="2026-07-10T14:00:00Z")
+        self.add_detection(
+            common="Northern Cardinal",
+            scientific="Cardinalis cardinalis",
+            captured_at="2026-07-11T14:00:00Z",
+        )
+        self.add_detection(
+            common="American Robin",
+            scientific="Turdus migratorius",
+            captured_at="2026-07-12T14:00:00Z",
+        )
+        self.add_detection(captured_at="2026-07-13T14:00:00Z")
+
+        summary = queries.today(self.conn, "America/New_York", recent_limit=2)
+
+        self.assertEqual(len(summary["recent"]), 2)
+        self.assertNotEqual(
+            summary["recent"][1]["species_key"], summary["latest"]["species_key"]
+        )
+        self.assertIn("is_first_visit", summary["latest"])
+        self.assertFalse(summary["latest"]["is_first_visit"])
+
     def test_species_detail_uses_favorite_cover_and_paginates_gallery(self) -> None:
         older = self.add_detection(captured_at="2026-07-12T14:00:00Z")
         newer = self.add_detection(captured_at="2026-07-13T14:00:00Z")

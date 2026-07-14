@@ -90,6 +90,37 @@ class JournalApiTests(unittest.TestCase):
         self.assertEqual(today.status_code, 200)
         self.assertIn("hourly_activity", today.json)
         self.assertEqual(len(today.json["recent"]), 3)
+        self.assertIn("is_first_visit", today.json["latest"])
+        self.assertFalse(today.json["latest"]["is_first_visit"])
+
+    def test_today_status_uses_history_older_than_the_recent_page(self) -> None:
+        conn = db.connect(self.db_path)
+        try:
+            for hour in range(14, 24):
+                self.add_detection(
+                    conn,
+                    "Northern Cardinal",
+                    "Cardinalis cardinalis",
+                    f"2026-07-12T{hour}:00:00Z",
+                )
+            for hour in range(0, 3):
+                self.add_detection(
+                    conn,
+                    "American Robin",
+                    "Turdus migratorius",
+                    f"2026-07-13T0{hour}:00:00Z",
+                )
+        finally:
+            conn.close()
+
+        today = self.client.get("/api/today")
+
+        self.assertEqual(len(today.json["recent"]), 12)
+        self.assertNotIn(
+            self.older_blue_jay_id,
+            [visit["id"] for visit in today.json["recent"]],
+        )
+        self.assertFalse(today.json["latest"]["is_first_visit"])
 
     def test_every_route_rejects_unknown_query_parameters(self) -> None:
         species_key = "sci:cyanocitta cristata"

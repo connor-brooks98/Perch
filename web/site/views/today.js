@@ -14,7 +14,7 @@ function localHour(hour) {
   return date.toLocaleTimeString(undefined, {hour: "numeric"});
 }
 
-function latestHero(latest, recent, actions) {
+function latestHero(latest, actions) {
   const section = element("section", "latest-section");
   section.setAttribute("aria-labelledby", "latest-heading");
   section.append(element("p", "section-kicker", "Latest visitor"));
@@ -39,8 +39,11 @@ function latestHero(latest, recent, actions) {
   if (latest.effective_species?.scientific) {
     content.append(element("p", "scientific-name", latest.effective_species.scientific));
   }
-  const sameSpecies = recent.filter((visit) => visit.species_key === latest.species_key).length;
-  content.append(element("p", "visitor-status", sameSpecies > 1 ? "A returning visitor" : "A new visitor"));
+  content.append(element(
+    "p",
+    "visitor-status",
+    latest.is_first_visit ? "A new visitor" : "A returning visitor",
+  ));
   const details = element("p", "hero-meta");
   details.textContent = [formatRelativeTime(latest.captured_at), formatConfidence(latest.confidence)]
     .filter(Boolean)
@@ -129,7 +132,7 @@ export function renderToday(outlet, data, actions = {}) {
   const page = element("div", "today-page");
   const greeting = element("h1", "today-greeting", data.greeting);
   page.append(greeting);
-  page.append(latestHero(data.latest, data.recent || [], actions));
+  page.append(latestHero(data.latest, actions));
   page.append(dailyStats(data));
   page.append(activityChart(data.hourly_activity));
   page.append(recentVisits(data.recent || [], data.has_more, actions));

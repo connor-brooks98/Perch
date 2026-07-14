@@ -294,6 +294,12 @@ def today(
     busiest = max(range(24), key=lambda hour: hours[hour]) if today_rows else None
     recent = all_rows[:bounded]
     latest = _serialize_detection(all_rows[0]) if all_rows else None
+    if latest:
+        latest["is_first_visit"] = sum(
+            species_key(row["effective_common"], row["effective_scientific"])
+            == latest["species_key"]
+            for row in all_rows
+        ) == 1
     day_part = (
         "morning"
         if local_now.hour < 12

@@ -260,6 +260,15 @@ class WebContractTests(unittest.TestCase):
         self.assertIn("@media (min-width: 48rem)", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
 
+    def test_today_javascript_behaviors(self):
+        subprocess.run(
+            ["node", "--test", "tests/test_today.mjs"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def test_format_module_exposes_shared_journal_formatters(self):
         result = run_javascript(
             """

@@ -24,7 +24,7 @@ export function missingImage() {
   return fallback;
 }
 
-export function birdImage(source, alt, className = "") {
+export function birdImage(source, alt, className = "", loading = "") {
   const frame = element("div", className);
   if (!source) {
     frame.append(missingImage());
@@ -34,6 +34,7 @@ export function birdImage(source, alt, className = "") {
   const image = document.createElement("img");
   image.src = source;
   image.alt = alt;
+  if (loading) image.loading = loading;
   image.addEventListener("error", () => frame.replaceChildren(missingImage()), {once: true});
   frame.append(image);
   return frame;
@@ -78,7 +79,7 @@ export function favoriteButton(detection, onToggle) {
 export function visitCard(detection, actions = {}) {
   const article = element("article", "visit-card");
   const name = speciesName(detection);
-  article.append(birdImage(detection.thumbnail, `${name} at the feeder`, "visit-photo"));
+  article.append(birdImage(detection.thumbnail, `${name} at the feeder`, "visit-photo", "lazy"));
 
   const body = element("div", "visit-card-body");
   const heading = element("h3", "visit-species", name);
