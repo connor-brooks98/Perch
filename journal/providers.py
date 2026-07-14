@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import time
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -21,9 +23,12 @@ ALLOWED_IMAGE_HOSTS = {
     "static.inaturalist.org",
 }
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_JSON_BYTES = 1024 * 1024
 IMAGE_CHUNK_BYTES = 64 * 1024
 MAX_REDIRECTS = 3
 MAX_REFERENCE_WIDTH = 960
+MAX_IMAGE_DIMENSION = 12_000
+MAX_IMAGE_PIXELS = 40_000_000
 
 
 @dataclass(frozen=True)
@@ -95,12 +100,10 @@ class ProviderClient:
             "id,name,rank,iconic_taxon_name,wikipedia_url,default_photo"
         )
         try:
-            response = self._get(
+            payload = self._request_json(
                 INATURALIST_TAXA_URL,
                 params={"q": scientific_name, "rank": "species", "fields": fields},
             )
-            response.raise_for_status()
-            payload = response.json()
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
             return None
 
@@ -122,7 +125,7 @@ class ProviderClient:
             ):
                 continue
             wikipedia_url = result.get("wikipedia_url")
-            if not isinstance(wikipedia_url, str) or not wikipedia_url:
+            if not self._allowed_wikipedia_page_url(wikipedia_url):
                 wikipedia_url = None
             return TaxonMatch(
                 taxon_id=result["id"],
@@ -133,18 +136,14 @@ class ProviderClient:
         return None
 
     def fetch_summary(self, wikipedia_url: str) -> PageSummary | None:
+        if not self._allowed_wikipedia_page_url(wikipedia_url):
+            return None
         parsed = urlparse(wikipedia_url)
-        if parsed.scheme != "https" or parsed.hostname != "en.wikipedia.org":
-            return None
         prefix = "/wiki/"
-        if not parsed.path.startswith(prefix) or len(parsed.path) <= len(prefix):
-            return None
         title = unquote(parsed.path[len(prefix) :])
         summary_url = WIKIMEDIA_SUMMARY_URL + quote(title, safe="")
         try:
-            response = self._get(summary_url)
-            response.raise_for_status()
-            payload = response.json()
+            payload = self._request_json(summary_url)
         except (requests.RequestException, RuntimeError, ValueError, TypeError):
             return None
         if not isinstance(payload, dict):
@@ -157,7 +156,7 @@ class ProviderClient:
             return None
         desktop = content_urls.get("desktop")
         page_url = desktop.get("page") if isinstance(desktop, dict) else None
-        if not isinstance(page_url, str) or not page_url:
+        if not self._allowed_wikipedia_page_url(page_url):
             return None
         return PageSummary(extract=extract, page_url=page_url)
 
@@ -207,17 +206,36 @@ class ProviderClient:
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 content.seek(0)
-                with Image.open(content) as source:
-                    source.load()
-                    image = source.convert("RGB")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", Image.DecompressionBombWarning)
+                    with Image.open(content) as source:
+                        width, height = source.size
+                        if (
+                            width < 1
+                            or height < 1
+                            or width > MAX_IMAGE_DIMENSION
+                            or height > MAX_IMAGE_DIMENSION
+                            or width * height > MAX_IMAGE_PIXELS
+                        ):
+                            return None
+                        source.load()
+                        image = source.convert("RGB")
                 if image.width > MAX_REFERENCE_WIDTH:
-                    height = round(image.height * MAX_REFERENCE_WIDTH / image.width)
+                    height = max(
+                        1, round(image.height * MAX_REFERENCE_WIDTH / image.width)
+                    )
                     image = image.resize(
                         (MAX_REFERENCE_WIDTH, height), Image.Resampling.LANCZOS
                     )
                 image.save(temporary_path, format="JPEG", quality=85)
                 temporary_path.replace(destination_path)
-            except (OSError, ValueError, UnidentifiedImageError):
+            except (
+                OSError,
+                ValueError,
+                UnidentifiedImageError,
+                Image.DecompressionBombError,
+                Image.DecompressionBombWarning,
+            ):
                 temporary_path.unlink(missing_ok=True)
                 return None
             return ReferenceImage(
@@ -237,6 +255,29 @@ class ProviderClient:
         kwargs.setdefault("timeout", REQUEST_TIMEOUT)
         return self.session.get(url, **kwargs)
 
+    def _request_json(self, url: str, **kwargs) -> object | None:
+        response = None
+        try:
+            response = self._get(url, stream=True, **kwargs)
+            response.raise_for_status()
+            declared_length = response.headers.get("Content-Length")
+            if declared_length is not None:
+                length = int(declared_length)
+                if length < 0 or length > MAX_JSON_BYTES:
+                    return None
+
+            content = bytearray()
+            for chunk in response.iter_content(chunk_size=IMAGE_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                if len(content) + len(chunk) > MAX_JSON_BYTES:
+                    return None
+                content.extend(chunk)
+            return json.loads(content.decode("utf-8"))
+        finally:
+            if response is not None:
+                response.close()
+
     @staticmethod
     def _validated_photo(value: object) -> PhotoMetadata | None:
         if not isinstance(value, dict):
@@ -252,6 +293,8 @@ class ProviderClient:
         creator = re.split(r",\s*", attribution, maxsplit=1)[0]
         creator = re.sub(r"^\s*(?:\(c\)|©)\s*", "", creator, flags=re.I).strip()
         if not creator:
+            return None
+        if not ProviderClient._allowed_image_url(url):
             return None
         return PhotoMetadata(
             url=url,
@@ -274,10 +317,45 @@ class ProviderClient:
 
     @staticmethod
     def _allowed_image_url(url: str) -> bool:
-        parsed = urlparse(url)
+        return ProviderClient._allowed_https_url(
+            url, allowed_hosts=ALLOWED_IMAGE_HOSTS
+        )
+
+    @staticmethod
+    def _allowed_wikipedia_page_url(url: object) -> bool:
+        return ProviderClient._allowed_https_url(
+            url,
+            allowed_hosts={"en.wikipedia.org"},
+            path_prefix="/wiki/",
+        )
+
+    @staticmethod
+    def _allowed_https_url(
+        url: object, *, allowed_hosts: set[str], path_prefix: str | None = None
+    ) -> bool:
+        if (
+            not isinstance(url, str)
+            or not url
+            or any(ord(char) < 0x20 or ord(char) == 0x7F for char in url)
+            or re.search(r"%(?![0-9A-Fa-f]{2})", url)
+        ):
+            return False
+        try:
+            parsed = urlparse(url)
+            port = parsed.port
+        except ValueError:
+            return False
         return (
             parsed.scheme == "https"
-            and parsed.hostname in ALLOWED_IMAGE_HOSTS
+            and parsed.hostname in allowed_hosts
             and parsed.username is None
             and parsed.password is None
+            and port in (None, 443)
+            and (
+                path_prefix is None
+                or (
+                    parsed.path.startswith(path_prefix)
+                    and len(parsed.path) > len(path_prefix)
+                )
+            )
         )

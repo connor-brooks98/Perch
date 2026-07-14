@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import io
+import json
+import struct
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -13,6 +17,9 @@ from journal.providers import (
     ProviderClient,
     RateGate,
 )
+
+
+MAX_JSON_BYTES = 1024 * 1024
 
 
 INAT_MATCH = {
@@ -33,10 +40,15 @@ INAT_MATCH = {
 }
 
 
+_UNSET = object()
+
+
 class FakeResponse:
-    def __init__(self, *, json_data=None, chunks=(), status=200, headers=None):
+    def __init__(self, *, json_data=_UNSET, chunks=None, status=200, headers=None):
         self._json_data = json_data
-        self._chunks = chunks
+        if chunks is None and json_data is not _UNSET:
+            chunks = [json.dumps(json_data).encode("utf-8")]
+        self._chunks = chunks or []
         self.status_code = status
         self.headers = headers or {}
 
@@ -45,7 +57,7 @@ class FakeResponse:
             raise RuntimeError(f"HTTP {self.status_code}")
 
     def json(self):
-        return self._json_data
+        raise AssertionError("provider JSON must be decoded from a bounded stream")
 
     def iter_content(self, chunk_size):
         if callable(self._chunks):
@@ -73,6 +85,20 @@ def jpeg_bytes(size=(20, 10)):
     output = io.BytesIO()
     Image.new("RGB", size, "royalblue").save(output, format="JPEG")
     return output.getvalue()
+
+
+def compressed_png_header(width, height):
+    def chunk(kind, data):
+        checksum = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", checksum)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b""))
+        + chunk(b"IEND", b"")
+    )
 
 
 class RateGateTests(unittest.TestCase):
@@ -142,6 +168,65 @@ class ProviderMatchTests(unittest.TestCase):
 
             self.assertIsNone(client.match_species("Cyanocitta cristata").photo)
 
+    def test_rejects_json_declared_over_transport_limit_without_reading(self):
+        def fail_if_read(_chunk_size):
+            raise AssertionError("oversized response body was read")
+
+        response = FakeResponse(
+            chunks=fail_if_read,
+            headers={"Content-Length": str(MAX_JSON_BYTES + 1)},
+        )
+        session = FakeSession([response])
+        client = ProviderClient(session=session, clock=lambda: 0, sleep=lambda _: None)
+
+        self.assertIsNone(client.match_species("Cyanocitta cristata"))
+        self.assertTrue(session.calls[0][1]["stream"])
+
+    def test_rejects_json_stream_that_crosses_transport_limit(self):
+        response = FakeResponse(chunks=[b"{" + b"x" * MAX_JSON_BYTES])
+        session = FakeSession([response])
+        client = ProviderClient(session=session, clock=lambda: 0, sleep=lambda _: None)
+
+        self.assertIsNone(client.match_species("Cyanocitta cristata"))
+
+    def test_discards_unsafe_wikipedia_and_photo_urls_from_match(self):
+        unsafe_urls = (
+            "javascript:alert(1)",
+            "http://en.wikipedia.org/wiki/Blue_jay",
+            "https://example.com/wiki/Blue_jay",
+            "https://user:secret@en.wikipedia.org/wiki/Blue_jay",
+            "https://en.wikipedia.org:444/wiki/Blue_jay",
+            "https://en.wikipedia.org/not-wiki/Blue_jay",
+            "https://[broken/wiki/Blue_jay",
+            "https://en.wikipedia.org/wiki/%ZZ",
+        )
+        for unsafe_url in unsafe_urls:
+            with self.subTest(wikipedia_url=unsafe_url):
+                result = {**INAT_MATCH["results"][0], "wikipedia_url": unsafe_url}
+                client, _ = self.make_client({"results": [result]})
+                self.assertIsNone(
+                    client.match_species("Cyanocitta cristata").wikipedia_url
+                )
+
+        unsafe_photo_urls = (
+            "javascript:alert(1)",
+            "http://static.inaturalist.org/photos/1.jpg",
+            "https://example.com/photos/1.jpg",
+            "https://user:secret@static.inaturalist.org/photos/1.jpg",
+            "https://static.inaturalist.org:444/photos/1.jpg",
+            "https://[broken/photos/1.jpg",
+            "https://static.inaturalist.org/photos/%ZZ",
+        )
+        for unsafe_url in unsafe_photo_urls:
+            with self.subTest(photo_url=unsafe_url):
+                photo = {
+                    **INAT_MATCH["results"][0]["default_photo"],
+                    "medium_url": unsafe_url,
+                }
+                result = {**INAT_MATCH["results"][0], "default_photo": photo}
+                client, _ = self.make_client({"results": [result]})
+                self.assertIsNone(client.match_species("Cyanocitta cristata").photo)
+
 
 class SummaryTests(unittest.TestCase):
     def test_encodes_title_and_retains_only_plain_text_and_canonical_url(self):
@@ -163,6 +248,76 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary.extract, "A blue jay is a passerine bird.")
         self.assertEqual(summary.page_url, "https://en.wikipedia.org/wiki/Blue_jay")
         self.assertFalse(hasattr(summary, "extract_html"))
+
+    def test_rejects_json_declared_over_transport_limit_without_reading(self):
+        def fail_if_read(_chunk_size):
+            raise AssertionError("oversized response body was read")
+
+        response = FakeResponse(
+            chunks=fail_if_read,
+            headers={"Content-Length": str(MAX_JSON_BYTES + 1)},
+        )
+        session = FakeSession([response])
+        client = ProviderClient(session=session, clock=lambda: 0, sleep=lambda _: None)
+
+        self.assertIsNone(
+            client.fetch_summary("https://en.wikipedia.org/wiki/Blue_jay")
+        )
+        self.assertTrue(session.calls[0][1]["stream"])
+
+    def test_rejects_json_stream_that_crosses_transport_limit(self):
+        response = FakeResponse(chunks=[b"{" + b"x" * MAX_JSON_BYTES])
+        session = FakeSession([response])
+        client = ProviderClient(session=session, clock=lambda: 0, sleep=lambda _: None)
+
+        self.assertIsNone(
+            client.fetch_summary("https://en.wikipedia.org/wiki/Blue_jay")
+        )
+
+    def test_rejects_unsafe_input_urls_without_requesting(self):
+        unsafe_urls = (
+            "javascript:alert(1)",
+            "http://en.wikipedia.org/wiki/Blue_jay",
+            "https://example.com/wiki/Blue_jay",
+            "https://user:secret@en.wikipedia.org/wiki/Blue_jay",
+            "https://en.wikipedia.org:444/wiki/Blue_jay",
+            "https://en.wikipedia.org/not-wiki/Blue_jay",
+            "https://[broken/wiki/Blue_jay",
+            "https://en.wikipedia.org/wiki/%ZZ",
+        )
+        for unsafe_url in unsafe_urls:
+            with self.subTest(url=unsafe_url):
+                session = FakeSession([])
+                client = ProviderClient(
+                    session=session, clock=lambda: 0, sleep=lambda _: None
+                )
+                self.assertIsNone(client.fetch_summary(unsafe_url))
+                self.assertEqual(session.calls, [])
+
+    def test_rejects_unsafe_canonical_page_url(self):
+        unsafe_urls = (
+            "javascript:alert(1)",
+            "http://en.wikipedia.org/wiki/Blue_jay",
+            "https://example.com/wiki/Blue_jay",
+            "https://user:secret@en.wikipedia.org/wiki/Blue_jay",
+            "https://en.wikipedia.org:444/wiki/Blue_jay",
+            "https://en.wikipedia.org/not-wiki/Blue_jay",
+            "https://[broken/wiki/Blue_jay",
+            "https://en.wikipedia.org/wiki/%ZZ",
+        )
+        for unsafe_url in unsafe_urls:
+            with self.subTest(url=unsafe_url):
+                payload = {
+                    "extract": "A blue jay is a passerine bird.",
+                    "content_urls": {"desktop": {"page": unsafe_url}},
+                }
+                session = FakeSession([FakeResponse(json_data=payload)])
+                client = ProviderClient(
+                    session=session, clock=lambda: 0, sleep=lambda _: None
+                )
+                self.assertIsNone(
+                    client.fetch_summary("https://en.wikipedia.org/wiki/Blue_jay")
+                )
 
 
 class ImageDownloadTests(unittest.TestCase):
@@ -231,6 +386,29 @@ class ImageDownloadTests(unittest.TestCase):
             with Image.open(destination) as image:
                 self.assertEqual(image.size, (960, 600))
                 self.assertEqual(image.format, "JPEG")
+
+    def test_rejects_oversized_decoded_dimensions_before_loading_pixels(self):
+        data = compressed_png_header(15_000, 4_000)
+        client, _ = self.client([FakeResponse(chunks=[data])])
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "bird.jpg"
+            with mock.patch.object(
+                Image.Image,
+                "load",
+                side_effect=AssertionError("oversized pixels must not be loaded"),
+            ):
+                self.assertIsNone(
+                    client.download_reference_image(self.PHOTO, destination)
+                )
+            self.assertFalse(destination.exists())
+
+    def test_treats_pillow_decompression_bomb_as_safe_rejection(self):
+        data = compressed_png_header(100_000, 100_000)
+        client, _ = self.client([FakeResponse(chunks=[data])])
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "bird.jpg"
+            self.assertIsNone(client.download_reference_image(self.PHOTO, destination))
+            self.assertFalse(destination.exists())
 
 
 if __name__ == "__main__":
