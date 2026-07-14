@@ -25,12 +25,6 @@ function applyCorrection(detection, patch, selected) {
     : {common_name: selected.common_name, scientific: selected.scientific || null};
 }
 
-function closePicker(picker, returnFocus) {
-  if (typeof picker.close === "function") picker.close();
-  picker.remove();
-  returnFocus?.focus();
-}
-
 export function openCorrectionPicker(detection, actions = {}) {
   const nativeDialog = document.createElement("dialog");
   const supportsDialog = typeof nativeDialog.showModal === "function";
@@ -65,6 +59,70 @@ export function openCorrectionPicker(detection, actions = {}) {
   controls.append(notBird, restore, cancel);
   picker.append(heading, help, label, results, controls, announcement);
 
+  const background = supportsDialog
+    ? []
+    : [...document.body.children].map((node) => ({node, inert: node.inert}));
+  for (const {node} of background) node.inert = true;
+
+  let debounce;
+  let searchVersion = 0;
+  let cleaned = false;
+
+  const returnFocus = (preferred) => {
+    const candidate = preferred?.isConnected
+      ? preferred
+      : actions.returnFocus?.isConnected
+        ? actions.returnFocus
+        : document.querySelector("[data-correction-trigger]");
+    candidate?.focus();
+  };
+
+  const cleanup = (preferred) => {
+    if (cleaned) return;
+    cleaned = true;
+    clearTimeout(debounce);
+    searchVersion += 1;
+    for (const {node, inert} of background) node.inert = inert;
+    picker.remove();
+    returnFocus(preferred);
+  };
+
+  const dismiss = (preferred) => {
+    if (supportsDialog && picker.open) picker.close();
+    cleanup(preferred);
+  };
+
+  if (supportsDialog) {
+    picker.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      dismiss();
+    });
+    picker.addEventListener("close", () => cleanup());
+  } else {
+    picker.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = [
+          ...picker.querySelectorAll("input"),
+          ...picker.querySelectorAll("button"),
+        ].filter((node) => !node.disabled);
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !picker.contains(document.activeElement))) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    });
+  }
+
   const save = async (patch, selected, sourceButton) => {
     const prior = clone(detection);
     applyCorrection(detection, patch, selected);
@@ -74,8 +132,9 @@ export function openCorrectionPicker(detection, actions = {}) {
     try {
       const saved = await actions.onSaveCorrection?.(detection, patch);
       if (saved && typeof saved === "object") replaceObject(detection, saved);
-      actions.onDetectionChange?.(detection);
-      closePicker(picker, actions.returnFocus);
+      const rendered = actions.onDetectionChange?.(detection);
+      const replacement = rendered?.querySelector?.("[data-correction-trigger]");
+      dismiss(replacement);
     } catch (_error) {
       replaceObject(detection, prior);
       actions.onDetectionChange?.(detection);
@@ -91,10 +150,8 @@ export function openCorrectionPicker(detection, actions = {}) {
     detection.original_species,
     restore,
   ));
-  cancel.addEventListener("click", () => closePicker(picker, actions.returnFocus));
+  cancel.addEventListener("click", () => dismiss());
 
-  let debounce;
-  let searchVersion = 0;
   input.addEventListener("input", () => {
     clearTimeout(debounce);
     const query = input.value.trim();
@@ -169,6 +226,7 @@ export function renderVisit(outlet, detection, actions = {}) {
   controls.append(favoriteButton(detection, actions.onToggleFavorite || (() => Promise.resolve())));
   const correct = element("button", "text-button", "Correct identification");
   correct.type = "button";
+  correct.dataset.correctionTrigger = "true";
   correct.addEventListener("click", () => openCorrectionPicker(detection, {
     ...actions,
     returnFocus: correct,

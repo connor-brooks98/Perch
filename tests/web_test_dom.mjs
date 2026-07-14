@@ -16,6 +16,7 @@ export class TestElement {
     this.disabled = false;
     this.value = "";
     this.checked = false;
+    this.inert = false;
     this.open = false;
     this._text = "";
   }
@@ -55,14 +56,31 @@ export class TestElement {
 
   focus() { globalThis.document.activeElement = this; }
 
+  contains(node) {
+    if (node === this) return true;
+    return this.children.some((child) => child.contains(node));
+  }
+
+  get isConnected() {
+    if (this === globalThis.document?.body) return true;
+    return Boolean(this.parentNode?.isConnected);
+  }
+
   addEventListener(name, callback) {
     const callbacks = this.listeners.get(name) || [];
     callbacks.push(callback);
     this.listeners.set(name, callbacks);
   }
 
-  async dispatch(name) {
-    await Promise.all((this.listeners.get(name) || []).map((callback) => callback({target: this, preventDefault() {}})));
+  async dispatch(name, init = {}) {
+    const event = {
+      target: this,
+      defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; },
+      ...init,
+    };
+    await Promise.all((this.listeners.get(name) || []).map((callback) => callback(event)));
+    return event;
   }
 
   matches(selector) {
