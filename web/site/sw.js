@@ -1,6 +1,19 @@
 // Minimal offline shell. Caches the app frame; data is always fetched fresh.
-const CACHE = "fieldlog-v1";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
+const CACHE = "perch-shell-v1";
+const SHELL = [
+  "./",
+  "index.html",
+  "styles.css",
+  "app.js",
+  "api.js",
+  "router.js",
+  "format.js",
+  "manifest.json",
+  "icons/perch-mark.svg",
+  "icons/apple-touch-icon.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png"
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

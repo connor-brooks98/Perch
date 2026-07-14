@@ -1,5 +1,7 @@
 from pathlib import Path
+from html.parser import HTMLParser
 import json
+import re
 import subprocess
 import unittest
 
@@ -22,10 +24,37 @@ def run_javascript(source: str):
     return json.loads(result.stdout)
 
 
+class BrandTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_brand = False
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        classes = attributes.get("class", "").split()
+        if tag == "a" and "brand" in classes:
+            self.in_brand = True
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.in_brand:
+            self.in_brand = False
+
+    def handle_data(self, data):
+        if self.in_brand:
+            self.parts.append(data)
+
+    @property
+    def text(self):
+        return " ".join(" ".join(self.parts).split())
+
+
 class WebContractTests(unittest.TestCase):
     def test_shell_uses_perch_identity_and_semantic_navigation(self):
         html = read("web/site/index.html")
-        self.assertIn("Perch · Sara's Feeder", html)
+        parser = BrandTextParser()
+        parser.feed(html)
+        self.assertEqual(parser.text, "Perch · Sara's Feeder")
         self.assertIn('href="#/today"', html)
         self.assertIn('href="#/birds"', html)
         self.assertIn('href="#/favorites"', html)
@@ -47,6 +76,32 @@ class WebContractTests(unittest.TestCase):
 
     def test_shell_brand_mark_exists(self):
         self.assertTrue((ROOT / "web/site/icons/perch-mark.svg").is_file())
+
+    def test_service_worker_caches_the_complete_perch_module_shell(self):
+        source = read("web/site/sw.js")
+        match = re.search(r"const SHELL = (\[[^;]+\]);", source)
+        self.assertIsNotNone(match)
+        shell = set(json.loads(match.group(1)))
+        modules = {
+            path.name
+            for path in (ROOT / "web/site").glob("*.js")
+            if path.name != "sw.js"
+        }
+        required = {
+            "./",
+            "index.html",
+            "styles.css",
+            "manifest.json",
+            "icons/perch-mark.svg",
+            "icons/apple-touch-icon.png",
+            "icons/icon-192.png",
+            "icons/icon-512.png",
+        }
+        self.assertLessEqual(modules | required, shell)
+        self.assertIn('const CACHE = "perch-shell-v1"', source)
+        self.assertNotIn("fieldlog-v1", source)
+        self.assertIn('url.pathname.includes("/data/")', source)
+        self.assertIn('url.pathname.includes("/thumbs/")', source)
 
     def test_api_client_builds_endpoints_and_uses_one_request_policy(self):
         result = run_javascript(
