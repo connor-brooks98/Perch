@@ -103,15 +103,33 @@ class JournalInstallationContractTests(unittest.TestCase):
         ]
         self.assertIn('header Cache-Control "no-store"', dynamic_handler)
 
-    def test_frontend_javascript_has_no_enrichment_provider_hostname(self) -> None:
-        javascript = "\n".join(
-            path.read_text(encoding="utf-8")
+    def test_frontend_provider_hosts_are_anchor_validation_only(self) -> None:
+        scripts = {
+            path.relative_to(ROOT / "web" / "site").as_posix(): path.read_text(
+                encoding="utf-8"
+            )
             for path in (ROOT / "web" / "site").rglob("*.js")
-        )
-        for hostname in (
-            "api.inaturalist.org",
+        }
+        species = scripts["views/species.js"]
+        provider_hosts = (
+            "www.inaturalist.org",
             "en.wikipedia.org",
             "inaturalist-open-data.s3.amazonaws.com",
             "static.inaturalist.org",
-        ):
-            self.assertNotIn(hostname, javascript)
+        )
+        for hostname in provider_hosts:
+            self.assertIn(hostname, species)
+            for path, source in scripts.items():
+                if path != "views/species.js":
+                    self.assertNotIn(hostname, source)
+
+        javascript = "\n".join(scripts.values())
+        self.assertNotRegex(javascript, r"fetch\s*\(\s*['\"`]https?://")
+        self.assertNotRegex(
+            javascript,
+            r"(?:\.src\s*=|setAttribute\(\s*['\"]src['\"])"
+            r"[^;\n]*(?:inaturalist|wikipedia|amazonaws)",
+        )
+        self.assertIn('link.href = href', species)
+        self.assertIn('photo.src = image.src', species)
+        self.assertIn('^\\/enrichment\\/[0-9a-f]{24}-[0-9a-f]{32}\\.jpg$', species)

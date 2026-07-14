@@ -14,12 +14,11 @@ function localHour(hour) {
 
 let pendingRefresh = null;
 let lastPendingRefreshKey = null;
-const hostname = (...labels) => labels.join(".");
-const INATURALIST_HOSTS = new Set([hostname("www", "inaturalist", "org")]);
-const WIKIPEDIA_HOSTS = new Set([hostname("en", "wikipedia", "org")]);
+const INATURALIST_HOSTS = new Set(["www.inaturalist.org"]);
+const WIKIPEDIA_HOSTS = new Set(["en.wikipedia.org"]);
 const PHOTO_SOURCE_HOSTS = new Set([
-  hostname("static", "inaturalist", "org"),
-  hostname("inaturalist-open-data", "s3", "amazonaws", "com"),
+  "static.inaturalist.org",
+  "inaturalist-open-data.s3.amazonaws.com",
 ]);
 
 function stopPendingRefresh() {
