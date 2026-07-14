@@ -5,6 +5,7 @@ import base64
 import json
 import sqlite3
 from datetime import date, datetime, time, timezone
+from pathlib import PurePath
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -129,6 +130,43 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
 
 def _species(common: str, scientific: str | None) -> dict[str, str | None]:
     return {"common_name": common, "scientific": scientific}
+
+
+def serialize_enrichment(profile: dict[str, Any]) -> dict[str, Any]:
+    """Return only cached enrichment fields approved for the public API."""
+    filename = profile.get("reference_image")
+    fully_attributed = all(
+        isinstance(profile.get(field), str) and profile[field].strip()
+        for field in (
+            "reference_image",
+            "image_creator",
+            "image_license",
+            "image_source_url",
+        )
+    )
+    local_filename = (
+        fully_attributed
+        and PurePath(filename).name == filename
+        and filename not in {".", ".."}
+        and "://" not in filename
+    )
+    reference_image = None
+    if local_filename:
+        reference_image = {
+            "src": "/enrichment/" + filename,
+            "creator": profile["image_creator"],
+            "license": profile["image_license"],
+            "source": profile["image_source_url"],
+        }
+    return {
+        "status": profile["status"],
+        "introduction": profile.get("introduction"),
+        "sources": {
+            "inaturalist": profile.get("inat_url"),
+            "wikipedia": profile.get("wikipedia_url"),
+        },
+        "reference_image": reference_image,
+    }
 
 
 def _serialize_detection(row: sqlite3.Row) -> dict[str, Any]:

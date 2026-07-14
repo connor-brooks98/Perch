@@ -91,12 +91,11 @@ class EnrichmentService:
         result["status"] = "ready" if now - fetched_at < FRESH_FOR else "stale"
         return result
 
-    def schedule(
-        self, species_key: str, common_name: str, scientific_name: str
-    ) -> bool:
+    def schedule(self, species_key: str, common: str, scientific: str) -> bool:
+        """Schedule a profile using the API contract's species name keywords."""
         if not all(
             isinstance(value, str) and value.strip()
-            for value in (species_key, common_name, scientific_name)
+            for value in (species_key, common, scientific)
         ):
             return False
         current = self.get(species_key)
@@ -104,8 +103,8 @@ class EnrichmentService:
             return False
         job = _Job(
             species_key=species_key,
-            common_name=common_name.strip(),
-            scientific_name=scientific_name.strip(),
+            common_name=common.strip(),
+            scientific_name=scientific.strip(),
         )
         with self._lifecycle_lock:
             if self._stopping:

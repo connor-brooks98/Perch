@@ -237,6 +237,29 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         result = run_query(load_and_mark)
         if result is None:
             return error("not_found", 404)
+        try:
+            profile = app.extensions["enrichment"].get(species_key)
+        except Exception:
+            log.warning(
+                "species_enrichment_failure category=cache species_key=%s",
+                species_key,
+            )
+            profile = {"status": "pending"}
+        if not isinstance(profile, dict) or "status" not in profile:
+            profile = {"status": "pending"}
+        if profile["status"] in {"pending", "stale"}:
+            try:
+                app.extensions["enrichment"].schedule(
+                    species_key=species_key,
+                    common=result["common_name"],
+                    scientific=result["scientific"],
+                )
+            except Exception:
+                log.warning(
+                    "species_enrichment_failure category=schedule species_key=%s",
+                    species_key,
+                )
+        result["enrichment"] = queries.serialize_enrichment(profile)
         return jsonify(result)
 
     @app.get("/api/taxa")
