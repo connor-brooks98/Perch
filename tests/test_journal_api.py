@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sqlite3
 import tempfile
 import unittest
@@ -89,6 +90,27 @@ class JournalApiTests(unittest.TestCase):
         self.assertEqual(today.status_code, 200)
         self.assertIn("hourly_activity", today.json)
         self.assertEqual(len(today.json["recent"]), 3)
+
+    def test_every_route_rejects_unknown_query_parameters(self) -> None:
+        species_key = "sci:cyanocitta cristata"
+        requests = (
+            ("get", "/api/health?unexpected=value", None),
+            ("get", "/api/today?unexpected=value", None),
+            ("get", "/api/detections?unexpected=value", None),
+            ("get", f"/api/detections/{self.blue_jay_id}?unexpected=value", None),
+            (
+                "patch",
+                f"/api/detections/{self.blue_jay_id}?unexpected=value",
+                {"favorite": True},
+            ),
+            ("get", "/api/species?unexpected=value", None),
+            ("get", f"/api/species/{species_key}?unexpected=value", None),
+            ("get", "/api/taxa?unexpected=value", None),
+        )
+        for method, path, body in requests:
+            with self.subTest(method=method, path=path):
+                response = getattr(self.client, method)(path, json=body)
+                self.assert_error(response, 400, "bad_request")
 
     def test_history_filters_and_stable_cursor(self) -> None:
         first = self.client.get("/api/detections?limit=1")
@@ -211,6 +233,17 @@ class JournalApiTests(unittest.TestCase):
         )
         self.assertEqual(next_page.json["gallery"][0]["id"], self.older_blue_jay_id)
 
+    def test_species_collection_is_bounded_by_limit(self) -> None:
+        result = self.client.get("/api/species?limit=1")
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(len(result.json["species"]), 1)
+        for query in ("limit=0", "limit=101", "limit=bird"):
+            with self.subTest(query=query):
+                self.assert_error(
+                    self.client.get(f"/api/species?{query}"), 400, "bad_request"
+                )
+
     def test_species_detail_rejects_bounds_cursor_and_missing_species(self) -> None:
         key = "sci:cyanocitta cristata"
         for query in ("limit=0", "limit=101", "limit=bird", "cursor=broken"):
@@ -244,6 +277,35 @@ class JournalApiTests(unittest.TestCase):
             response.json, {"error": "database_busy", "retryable": True}
         )
         self.assertEqual(connect.call_count, 3)
+
+    def test_journal_connection_uses_configured_short_busy_timeout(self) -> None:
+        self.assertIn("timeout_seconds", inspect.signature(db.connect).parameters)
+        conn = db.connect(self.db_path, timeout_seconds=0.012)
+        try:
+            self.assertEqual(conn.execute("PRAGMA busy_timeout").fetchone()[0], 12)
+        finally:
+            conn.close()
+
+        with mock.patch("journal.app.db.connect", wraps=db.connect) as connect:
+            response = self.client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        connect.assert_called_once_with(str(self.db_path), timeout_seconds=0.05)
+
+    def test_unexpected_errors_are_sanitized_in_response_and_logs(self) -> None:
+        secret = "secret-token-that-must-not-leak"
+        self.app.config["PROPAGATE_EXCEPTIONS"] = False
+        with mock.patch(
+            "journal.app.queries.today", side_effect=RuntimeError(secret)
+        ), self.assertLogs("journal", level="ERROR") as captured:
+            response = self.client.get("/api/today")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json, {"error": "internal_error"})
+        logs = "\n".join(captured.output)
+        self.assertIn("category=unexpected", logs)
+        self.assertNotIn(secret, logs)
+        self.assertNotIn("Traceback", logs)
 
 
 if __name__ == "__main__":

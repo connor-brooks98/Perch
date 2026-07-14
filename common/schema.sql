@@ -3,7 +3,6 @@
 -- WAL mode lets them coexist without stepping on each other.
 
 PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
 PRAGMA synchronous = NORMAL;   -- safe under WAL; cuts fsync latency/SD wear on the Pi
 
 -- One row per motion clip pulled from Blink.

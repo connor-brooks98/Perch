@@ -1,6 +1,7 @@
 """Private HTTP API for the shared family journal."""
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import time
@@ -19,9 +20,11 @@ DEFAULTS = {
     "LABELS_PATH": os.getenv("LABELS_PATH", "/app/model/labels.txt"),
     "TZ": os.getenv("TZ", "America/New_York"),
     "MAX_PAGE_SIZE": 100,
+    "DB_TIMEOUT_SECONDS": 0.05,
 }
 
 T = TypeVar("T")
+log = logging.getLogger("journal")
 
 
 def with_db_retry(
@@ -52,7 +55,10 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     def run_query(operation: Callable[[sqlite3.Connection], T]) -> T:
         def attempt() -> T:
-            conn = db.connect(app.config["DB_PATH"])
+            conn = db.connect(
+                app.config["DB_PATH"],
+                timeout_seconds=app.config["DB_TIMEOUT_SECONDS"],
+            )
             try:
                 return operation(conn)
             finally:
@@ -83,6 +89,10 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             return False
         raise ValueError("invalid favorite filter")
 
+    def allow_query_parameters(allowed: set[str]) -> None:
+        if set(request.args) - allowed:
+            raise ValueError("unknown query parameter")
+
     @app.errorhandler(queries.InvalidCursor)
     def invalid_cursor(_exc):
         return error("bad_request", 400, message="malformed cursor")
@@ -99,6 +109,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     def database_error(exc):
         if "locked" in str(exc).casefold():
             return jsonify(error="database_busy", retryable=True), 503
+        log.error("journal_api_error category=database")
+        return error("internal_error", 500)
+
+    @app.errorhandler(Exception)
+    def unexpected_error(_exc):
+        log.error("journal_api_error category=unexpected")
         return error("internal_error", 500)
 
     @app.errorhandler(400)
@@ -111,24 +127,30 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/api/health")
     def health():
+        allow_query_parameters(set())
         run_query(lambda conn: conn.execute("SELECT 1").fetchone())
         return jsonify(status="ok")
 
     @app.get("/api/today")
     def today():
+        allow_query_parameters(set())
         result = run_query(lambda conn: queries.today(conn, app.config["TZ"]))
         return jsonify(result)
 
     @app.get("/api/detections")
     def detections():
+        allow_query_parameters(
+            {"cursor", "limit", "species", "favorite", "date"}
+        )
         limit = parse_limit(20)
+        favorite = parse_favorite()
         result = run_query(
             lambda conn: queries.detections(
                 conn,
                 cursor=request.args.get("cursor"),
                 limit=limit,
                 species_key=request.args.get("species"),
-                favorite=parse_favorite(),
+                favorite=favorite,
                 local_date=request.args.get("date"),
                 tz_name=app.config["TZ"],
             )
@@ -137,6 +159,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/api/detections/<int:detection_id>")
     def detection_detail(detection_id: int):
+        allow_query_parameters(set())
         result = run_query(lambda conn: queries.detection(conn, detection_id))
         if result is None:
             return error("not_found", 404)
@@ -144,6 +167,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.patch("/api/detections/<int:detection_id>")
     def patch_detection(detection_id: int):
+        allow_query_parameters(set())
         patch = request.get_json(silent=True)
         if not isinstance(patch, dict):
             return error("bad_request", 400)
@@ -156,17 +180,21 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/api/species")
     def species():
+        allow_query_parameters({"q", "sort", "limit"})
+        limit = parse_limit(100)
         result = run_query(
             lambda conn: queries.species(
                 conn,
                 query=request.args.get("q", ""),
                 sort=request.args.get("sort", "newest"),
+                limit=limit,
             )
         )
         return jsonify(result)
 
     @app.get("/api/species/<species_key>")
     def species_detail(species_key: str):
+        allow_query_parameters({"cursor", "limit"})
         limit = parse_limit(24)
 
         def load_and_mark(conn: sqlite3.Connection):
@@ -188,6 +216,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.get("/api/taxa")
     def taxa():
+        allow_query_parameters({"q", "limit"})
         limit = parse_limit(20)
         return jsonify(
             taxa=[taxon.as_dict() for taxon in catalog.search(request.args.get("q", ""), limit)]

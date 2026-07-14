@@ -145,11 +145,22 @@ def _serialize_detection(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def _effective_rows(conn: sqlite3.Connection, *, include_excluded: bool = False):
+def _effective_rows(
+    conn: sqlite3.Connection,
+    *,
+    include_excluded: bool = False,
+    limit: int | None = None,
+):
     where = "" if include_excluded else " WHERE e.excluded = 0"
+    limit_clause = ""
+    parameters: tuple[int, ...] = ()
+    if limit is not None:
+        limit_clause = " LIMIT ?"
+        parameters = (_bounded_limit(limit),)
     return conn.execute(
         f"SELECT * FROM ({EFFECTIVE_SQL}) e{where} "
-        "ORDER BY e.captured_at DESC, e.id DESC"
+        f"ORDER BY e.captured_at DESC, e.id DESC{limit_clause}",
+        parameters,
     ).fetchall()
 
 
@@ -308,15 +319,23 @@ def today(
     }
 
 
-def _album_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _album_rows(conn: sqlite3.Connection, limit: int) -> list[dict[str, Any]]:
     grouped: dict[str, list[sqlite3.Row]] = {}
-    for row in _effective_rows(conn):
+    for row in _effective_rows(conn, limit=limit):
         key = species_key(row["effective_common"], row["effective_scientific"])
         grouped.setdefault(key, []).append(row)
-    opened = {
-        row["species_key"]
-        for row in conn.execute("SELECT species_key FROM species_journal_state")
-    }
+    keys = tuple(grouped)
+    opened = set()
+    if keys:
+        placeholders = ", ".join("?" for _key in keys)
+        opened = {
+            row["species_key"]
+            for row in conn.execute(
+                f"SELECT species_key FROM species_journal_state "
+                f"WHERE species_key IN ({placeholders})",
+                keys,
+            )
+        }
     albums = []
     for key, rows in grouped.items():
         newest = rows[0]
@@ -337,8 +356,10 @@ def _album_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return albums
 
 
-def species(conn: sqlite3.Connection, *, query: str, sort: str) -> dict[str, Any]:
-    albums = _album_rows(conn)
+def species(
+    conn: sqlite3.Connection, *, query: str, sort: str, limit: int = MAX_PAGE_SIZE
+) -> dict[str, Any]:
+    albums = _album_rows(conn, _bounded_limit(limit))
     needle = " ".join(query.casefold().split())
     if needle:
         albums = [

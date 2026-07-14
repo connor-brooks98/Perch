@@ -18,17 +18,21 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def connect(db_path: str | Path) -> sqlite3.Connection:
+def connect(db_path: str | Path, *, timeout_seconds: float = 30) -> sqlite3.Connection:
     """Open (and initialise, if needed) the shared database."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=30)
+    timeout = float(timeout_seconds)
+    if timeout < 0:
+        raise ValueError("timeout must not be negative")
+    busy_timeout_ms = int(timeout * 1000)
+    conn = sqlite3.connect(str(db_path), timeout=timeout)
     conn.row_factory = sqlite3.Row
     # Keep these runtime pragmas explicit on every connection; schema.sql also
     # carries them, but this makes the concurrency settings resilient to future
     # schema/init refactors.
     conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA busy_timeout = 30000;")
+    conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(SCHEMA_PATH.read_text())

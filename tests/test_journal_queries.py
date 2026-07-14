@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sqlite3
 import tempfile
 import unittest
@@ -175,6 +176,31 @@ class JournalQueryTests(unittest.TestCase):
                 "is_new"
             ]
         )
+
+    def test_species_collection_limit_bounds_rows_in_sql(self) -> None:
+        for index in range(6):
+            self.add_detection(
+                common=f"Bird {index}",
+                scientific=f"Avis {index}",
+                captured_at=f"2026-07-13T{index:02d}:00:00Z",
+            )
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            self.assertIn("limit", inspect.signature(queries.species).parameters)
+            collection = queries.species(
+                self.conn, query="", sort="newest", limit=3
+            )
+        finally:
+            self.conn.set_trace_callback(None)
+
+        bounded_queries = [
+            statement
+            for statement in statements
+            if "ORDER BY e.captured_at DESC, e.id DESC LIMIT 3" in statement
+        ]
+        self.assertEqual(len(collection["species"]), 3)
+        self.assertTrue(bounded_queries)
 
     def test_common_only_correction_does_not_retain_original_scientific_name(self) -> None:
         corrected_id = self.add_detection()
