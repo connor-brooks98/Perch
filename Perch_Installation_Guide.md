@@ -246,9 +246,14 @@ send a verification code by email or text message.
 **Run on the Raspberry Pi:**
 
 ```bash
+./scripts/prepare-data.sh
 docker compose build puller
 docker compose run --rm puller python auth_setup.py
 ```
+
+The first command creates Perch's data directories as your `pi` user before
+Docker sees the bind mounts. This prevents Docker from creating a root-owned
+`data/blink` directory that cannot store the Blink credentials file.
 
 Enter the code when prompted. The command then prints the camera names available
 to the account. If the intended name does not exactly match

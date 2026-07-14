@@ -33,6 +33,38 @@ def bash_block_labels(document: str) -> list[str]:
 
 
 class InstallationContractTests(unittest.TestCase):
+    def test_data_directories_are_prepared_before_blink_authentication(self) -> None:
+        helper_path = ROOT / "scripts" / "prepare-data.sh"
+        self.assertTrue(helper_path.is_file())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            scripts = project / "scripts"
+            scripts.mkdir()
+            shutil.copy2(helper_path, scripts / helper_path.name)
+
+            result = subprocess.run(
+                ["bash", str(scripts / helper_path.name)],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for relative_path in ("data/blink", "data/clips", "data/db", "data/web"):
+                self.assertTrue((project / relative_path).is_dir(), relative_path)
+            self.assertEqual((project / "data/blink").stat().st_mode & 0o777, 0o700)
+            self.assertEqual((project / "data/db").stat().st_mode & 0o777, 0o700)
+
+        for relative_path in ("README.md", "Perch_Installation_Guide.md"):
+            document = read(relative_path)
+            prepare_position = document.index("./scripts/prepare-data.sh")
+            auth_position = document.index(
+                "docker compose run --rm puller python auth_setup.py"
+            )
+            self.assertLess(prepare_position, auth_position, relative_path)
+
     def test_puller_uses_current_blink_oauth_flow(self) -> None:
         requirements = read("puller/requirements.txt")
         auth_setup = read("puller/auth_setup.py")

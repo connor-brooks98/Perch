@@ -53,7 +53,7 @@ grep -Eq "^BASIC_AUTH_HASH='\\\$2[aby]\\\$" .env || \
 [[ "$(checksum classifier/model/current/model.tflite)" == "$MODEL_SHA256" ]] || fail "model.tflite checksum does not match"
 [[ "$(checksum classifier/model/current/labels.txt)" == "$LABELS_SHA256" ]] || fail "labels.txt checksum does not match"
 
-mkdir -p data/blink data/clips data/db data/web
+./scripts/prepare-data.sh
 
 config_output="$(docker compose config 2>&1)" || {
   echo "$config_output" >&2

@@ -77,9 +77,14 @@ and Docker Compose. Everyone else should use the
 4. Authenticate with Blink:
 
    ```bash
+   ./scripts/prepare-data.sh
    docker compose build puller
    docker compose run --rm puller python auth_setup.py
    ```
+
+   The preparation step creates every bind-mounted data directory as your Pi
+   user before Docker starts. This lets the puller save Blink credentials
+   without creating root-owned directories.
 
 5. Run the installation preflight and start Perch:
 
@@ -235,6 +240,7 @@ authentication.
 | `web/` | Caddy configuration and the static field-log dashboard. |
 | `scripts/backup-db.sh` | SQLite backup helper. |
 | `scripts/download-model.sh` | Transactional model-bundle downloader and verifier. |
+| `scripts/prepare-data.sh` | Creates writable host data directories before the first container starts. |
 | `scripts/verify-install.sh` | Installation, container, and inference preflight. |
 | `docker-compose.yml` | The `puller`, `classifier`, and `web` services. |
 | `docker-compose.cloudflare.yml` | Optional Cloudflare Tunnel overlay. |
