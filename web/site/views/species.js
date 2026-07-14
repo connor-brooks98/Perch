@@ -12,14 +12,94 @@ function localHour(hour) {
   return new Date(2020, 0, 1, Number(hour)).toLocaleTimeString(undefined, {hour: "numeric"});
 }
 
-function enrichmentSlot(enrichment = {status: "missing"}) {
+let pendingRefresh = null;
+let lastPendingRefreshKey = null;
+
+function stopPendingRefresh() {
+  if (!pendingRefresh) return;
+  clearTimeout(pendingRefresh.timer);
+  window.removeEventListener("hashchange", pendingRefresh.cancelOnNavigation);
+  pendingRefresh = null;
+}
+
+function schedulePendingRefresh(actions) {
+  if (actions.pendingRefreshKey === undefined || actions.pendingRefreshKey === lastPendingRefreshKey) return;
+  lastPendingRefreshKey = actions.pendingRefreshKey;
+  stopPendingRefresh();
+  const routeHash = window.location.hash;
+  const cancelOnNavigation = () => {
+    if (window.location.hash !== routeHash) stopPendingRefresh();
+  };
+  const timer = setTimeout(() => {
+    if (pendingRefresh?.timer !== timer) return;
+    stopPendingRefresh();
+    if (window.location.hash === routeHash) actions.onRefresh?.();
+  }, 2000);
+  pendingRefresh = {timer, cancelOnNavigation};
+  window.addEventListener("hashchange", cancelOnNavigation);
+}
+
+function sourceLink(label, href) {
+  const link = element("a", "enrichment-source", label);
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  return link;
+}
+
+function completeReferenceImage(image) {
+  return image && image.creator && image.license && image.source &&
+    typeof image.src === "string" && image.src.startsWith("/enrichment/");
+}
+
+function enrichmentSlot(enrichment = {status: "missing"}, commonName = "bird", actions = {}) {
   const section = element("section", "enrichment-slot");
-  section.append(element("h2", "section-title", "Field notes"));
+  section.append(element("h2", "section-title", "About this bird"));
   const status = enrichment.status || "missing";
-  if (["missing", "pending", "failed"].includes(status)) {
-    section.append(element("p", "", "Local visit history is ready. More species notes will be added here later."));
-  } else if (enrichment.summary) {
-    section.append(element("p", "", enrichment.summary));
+  if (status === "pending") {
+    section.append(element("p", "", "We’re gathering a little more about this bird."));
+    schedulePendingRefresh(actions);
+    return section;
+  }
+
+  stopPendingRefresh();
+  const image = enrichment.reference_image;
+  const sources = enrichment.sources || {};
+  const hasContent = enrichment.introduction || sources.inaturalist || sources.wikipedia || completeReferenceImage(image);
+  if (status === "failed" || !hasContent) {
+    section.append(element("p", "", "Your sightings are still complete; extra species notes are unavailable right now."));
+    return section;
+  }
+
+  if (enrichment.introduction) {
+    const introduction = element("p", "enrichment-introduction");
+    introduction.textContent = enrichment.introduction;
+    section.append(introduction);
+  }
+  const profileLinks = [];
+  if (sources.inaturalist) profileLinks.push(sourceLink("iNaturalist", sources.inaturalist));
+  if (sources.wikipedia) profileLinks.push(sourceLink("Wikipedia", sources.wikipedia));
+  if (profileLinks.length) {
+    const links = element("p", "enrichment-sources", "Learn more: ");
+    profileLinks.forEach((link, index) => {
+      if (index) links.append(element("span", "", " · "));
+      links.append(link);
+    });
+    section.append(links);
+  }
+  if (completeReferenceImage(image)) {
+    const figure = element("figure", "reference-image");
+    const photo = document.createElement("img");
+    photo.src = image.src;
+    photo.alt = `Reference photograph of ${commonName}`;
+    photo.loading = "lazy";
+    const caption = element("figcaption", "reference-caption");
+    caption.append(
+      element("span", "", `Reference photo by ${image.creator} · ${image.license} · `),
+      sourceLink("View source", image.source),
+    );
+    figure.append(photo, caption);
+    section.append(figure);
   }
   return section;
 }
@@ -46,6 +126,7 @@ export function renderSpecies(outlet, data, actions = {}) {
   intro.append(element("p", "album-date", `Last seen ${formatDate(data.last_seen)}`));
   const hours = (data.busiest_hours || []).map(localHour).join(", ");
   intro.append(element("p", "album-date", `Busiest ${hours || "—"}`));
+  intro.append(enrichmentSlot(data.enrichment, data.common_name, actions));
   hero.append(intro);
   page.append(hero);
 
@@ -63,6 +144,6 @@ export function renderSpecies(outlet, data, actions = {}) {
     more.addEventListener("click", () => actions.onLoadMore?.(more.dataset.cursor, grid, more));
     gallerySection.append(more);
   }
-  page.append(gallerySection, enrichmentSlot(data.enrichment));
+  page.append(gallerySection);
   outlet.replaceChildren(page);
 }

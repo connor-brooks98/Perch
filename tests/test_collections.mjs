@@ -69,11 +69,11 @@ test("species gallery appends cursor pages without replacing existing nodes", as
   assert.equal(grid.children.length, 2);
   assert.equal(grid.children[0], first);
   assert.equal(grid.querySelectorAll("img").every((image) => image.loading === "lazy"), true);
-  assert.match(view.textContent, /local visit history/i);
-  const page = view.children[0];
+  assert.match(view.textContent, /Your sightings are still complete/);
+  const intro = view.querySelector(".species-intro");
   assert.ok(
-    page.children.indexOf(view.querySelector(".gallery-section")) <
-      page.children.indexOf(view.querySelector(".enrichment-slot")),
-    "local visit history must render before enrichment",
+    intro.children.indexOf(view.querySelector(".album-date")) <
+      intro.children.indexOf(view.querySelector(".enrichment-slot")),
+    "local species statistics must render before enrichment",
   );
 });

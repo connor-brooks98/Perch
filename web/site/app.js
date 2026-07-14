@@ -128,6 +128,10 @@ async function loadSpecies(version, key) {
     if (version !== renderVersion) return;
     renderSpecies(view, {...data, enrichment: data.enrichment || {status: "missing"}}, {
       ...visitActions,
+      pendingRefreshKey: version,
+      onRefresh: () => {
+        if (version === renderVersion) loadSpecies(version, key);
+      },
       onLoadMore: async (cursor, grid, button) => {
         button.disabled = true;
         try {

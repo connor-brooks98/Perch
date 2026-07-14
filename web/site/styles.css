@@ -138,8 +138,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .species-hero { overflow: hidden; border: 1px solid var(--sage-line); border-radius: 1.25rem; background: var(--cream); box-shadow: var(--shadow); }
 .species-cover { aspect-ratio: 4 / 3; background: #d5dfd0; }
 .species-intro { padding: 1.25rem; }
-.enrichment-slot { padding: 1.2rem; border-left: .3rem solid var(--warm-amber); border-radius: .25rem 1rem 1rem .25rem; background: rgba(255, 250, 240, .72); }
-.enrichment-slot p { margin-bottom: 0; color: var(--muted-sage); }
+.enrichment-slot { margin-top: 1.25rem; padding: 1.2rem; border-left: .3rem solid var(--warm-amber); border-radius: .25rem 1rem 1rem .25rem; background: rgba(255, 250, 240, .72); }
+.enrichment-slot p { color: var(--muted-sage); }
+.enrichment-slot > :last-child { margin-bottom: 0; }
+.enrichment-sources { font-size: .85rem; }
+.reference-image { overflow: hidden; margin: 1rem 0 0; border-radius: .75rem; background: var(--paper); }
+.reference-image img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.reference-caption { padding: .65rem .75rem; color: var(--muted-sage); font-size: .75rem; line-height: 1.4; }
 .gallery-section { display: grid; gap: 1rem; }
 
 .visit-detail { overflow: hidden; border: 1px solid var(--sage-line); border-radius: 1.25rem; background: var(--cream); box-shadow: var(--shadow); }

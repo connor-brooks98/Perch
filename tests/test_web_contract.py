@@ -309,6 +309,32 @@ class WebContractTests(unittest.TestCase):
             text=True,
         )
 
+    def test_species_enrichment_contract(self):
+        species = read("web/site/views/species.js")
+        app = read("web/site/app.js")
+        styles = read("web/site/styles.css")
+
+        self.assertIn('"About this bird"', species)
+        self.assertIn("introduction.textContent = enrichment.introduction", species)
+        self.assertIn('link.rel = "noopener noreferrer"', species)
+        self.assertIn('image.src.startsWith("/enrichment/")', species)
+        for field in ("image.creator", "image.license", "image.source"):
+            self.assertIn(field, species)
+        self.assertLess(species.index("data.cover"), species.index("intro.append(enrichmentSlot"))
+        self.assertLess(species.index("Busiest"), species.index("intro.append(enrichmentSlot"))
+        self.assertIn("We’re gathering a little more about this bird.", species)
+        self.assertIn(
+            "Your sightings are still complete; extra species notes are unavailable right now.",
+            species,
+        )
+        self.assertIn("setTimeout", species)
+        self.assertIn("2000", species)
+        self.assertIn('addEventListener("hashchange"', species)
+        self.assertIn('removeEventListener("hashchange"', species)
+        self.assertIn("pendingRefreshKey", app)
+        self.assertIn("onRefresh", app)
+        self.assertIn(".reference-image", styles)
+
     def test_visit_correction_contract(self):
         self.assertTrue((ROOT / "web/site/views/visit.js").is_file())
         source = read("web/site/views/visit.js")
