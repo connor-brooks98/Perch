@@ -269,6 +269,41 @@ class WebContractTests(unittest.TestCase):
             text=True,
         )
 
+    def test_collection_and_species_view_contracts(self):
+        history = read("web/site/views/history.js")
+        birds = read("web/site/views/birds.js")
+        favorites = read("web/site/views/favorites.js")
+        species = read("web/site/views/species.js")
+        app = read("web/site/app.js")
+
+        for value in ("species", "favorite", "date", "next_cursor"):
+            self.assertIn(value, history)
+        self.assertIn("Load older visits", history)
+        for value in ("newest", "visits", "recent", "alphabetical"):
+            self.assertIn(value, birds)
+        for value in ("first_seen", "last_seen", "is_new", "New"):
+            self.assertIn(value, birds)
+        self.assertIn("encodeURIComponent", birds)
+        self.assertIn("renderFavorites", favorites)
+        self.assertIn("visitCard", favorites)
+        for value in (
+            "cover", "busiest_hours", "gallery", "next_cursor", "enrichment",
+            "missing", "pending", "failed", 'loading="lazy"',
+        ):
+            self.assertIn(value, species)
+        for renderer in ("renderHistory", "renderBirds", "renderFavorites", "renderSpecies"):
+            self.assertIn(renderer, app)
+        self.assertIn("history.replaceState", app)
+
+    def test_collection_javascript_behaviors(self):
+        subprocess.run(
+            ["node", "--test", "tests/test_collections.mjs"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def test_format_module_exposes_shared_journal_formatters(self):
         result = run_javascript(
             """

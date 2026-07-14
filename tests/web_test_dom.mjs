@@ -14,6 +14,8 @@ export class TestElement {
     this.listeners = new Map();
     this.className = "";
     this.disabled = false;
+    this.value = "";
+    this.checked = false;
     this._text = "";
   }
 
@@ -56,13 +58,17 @@ export class TestElement {
   }
 
   async dispatch(name) {
-    await Promise.all((this.listeners.get(name) || []).map((callback) => callback({target: this})));
+    await Promise.all((this.listeners.get(name) || []).map((callback) => callback({target: this, preventDefault() {}})));
   }
 
   matches(selector) {
     if (selector.startsWith("#")) return this.id === selector.slice(1);
     if (selector.startsWith(".")) return this.className.split(/\s+/).includes(selector.slice(1));
     if (selector === "[data-inline-error]") return this.dataset.inlineError !== undefined;
+    if (selector.startsWith("[data-") && selector.endsWith("]")) {
+      const key = selector.slice(6, -1).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+      return this.dataset[key] !== undefined;
+    }
     return this.tagName === selector.toUpperCase();
   }
 

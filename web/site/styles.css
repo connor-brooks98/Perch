@@ -118,6 +118,30 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .inline-error { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding: .8rem 1rem; color: #703b25; }
 .status { min-height: 1.5rem; margin-top: 1rem; color: #703b25; font-size: .9rem; }
 
+.collection-page, .species-page { display: grid; gap: 1.35rem; }
+.page-title { margin: -.35rem 0 .25rem; font-family: var(--display); font-size: clamp(2.2rem, 8vw, 4.5rem); line-height: 1; letter-spacing: -.03em; }
+.collection-filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; padding: .85rem; border: 1px solid var(--sage-line); border-radius: 1rem; background: rgba(255, 250, 240, .7); }
+.collection-filters input:not([type="checkbox"]), .collection-filters select { min-height: 2.75rem; max-width: 100%; border: 1px solid var(--sage-line); border-radius: .7rem; padding: .55rem .7rem; color: var(--charcoal); background: var(--paper); }
+.filter-field { display: flex; flex-direction: column; gap: .25rem; }
+.filter-label { color: var(--muted-sage); font-size: .76rem; font-weight: 750; }
+.filter-field:has(input[type="checkbox"]) { flex-direction: row-reverse; align-items: center; min-height: 2.75rem; }
+.visit-grid, .species-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.load-more { justify-self: center; min-height: 2.8rem; border: 1px solid var(--warm-amber); border-radius: 999px; padding: .6rem 1.2rem; color: var(--charcoal); background: #fff4d9; font-weight: 750; cursor: pointer; }
+.species-card { overflow: hidden; border: 1px solid var(--sage-line); border-radius: 1rem; background: var(--paper); box-shadow: 0 6px 20px rgba(39, 49, 41, .06); text-decoration: none; }
+.species-thumbnail { aspect-ratio: 4 / 3; background: #d5dfd0; }
+.species-thumbnail img, .species-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.species-card-body { padding: .9rem; }
+.species-card-heading { display: flex; justify-content: space-between; gap: .5rem; align-items: start; }
+.new-badge { border-radius: 999px; padding: .12rem .5rem; color: #65400b; background: #ffe8ad; font-size: .7rem; font-weight: 800; }
+.album-count { margin: .8rem 0 .2rem; font-weight: 750; }
+.album-date { margin: .12rem 0; color: var(--muted-sage); font-size: .82rem; }
+.species-hero { overflow: hidden; border: 1px solid var(--sage-line); border-radius: 1.25rem; background: var(--cream); box-shadow: var(--shadow); }
+.species-cover { aspect-ratio: 4 / 3; background: #d5dfd0; }
+.species-intro { padding: 1.25rem; }
+.enrichment-slot { padding: 1.2rem; border-left: .3rem solid var(--warm-amber); border-radius: .25rem 1rem 1rem .25rem; background: rgba(255, 250, 240, .72); }
+.enrichment-slot p { margin-bottom: 0; color: var(--muted-sage); }
+.gallery-section { display: grid; gap: 1rem; }
+
 @media (min-width: 48rem) {
   body { padding: 0 1.5rem 4rem; }
   .top-nav { display: flex; }
@@ -126,11 +150,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .hero-card { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(18rem, .75fr); }
   .hero-content { display: flex; flex-direction: column; justify-content: center; padding: clamp(1.5rem, 4vw, 3rem); }
   .recent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .visit-grid, .species-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .species-hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(18rem, .8fr); }
+  .species-intro { display: flex; flex-direction: column; justify-content: center; padding: clamp(1.5rem, 4vw, 3rem); }
   .stat-label { font-size: .82rem; }
 }
 
 @media (min-width: 64rem) {
   .recent-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .visit-grid, .species-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
