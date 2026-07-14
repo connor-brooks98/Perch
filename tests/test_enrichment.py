@@ -10,11 +10,13 @@ from pathlib import Path
 from unittest import mock
 
 from PIL import Image
+import requests
 
 from journal.providers import (
     MAX_IMAGE_BYTES,
     PhotoMetadata,
     ProviderClient,
+    ProviderFailure,
     RateGate,
 )
 
@@ -78,7 +80,10 @@ class FakeSession:
         self.calls.append((url, kwargs))
         if not self.responses:
             raise AssertionError("unexpected network request")
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 def jpeg_bytes(size=(20, 10)):
@@ -116,6 +121,62 @@ class RateGateTests(unittest.TestCase):
         gate.wait()
 
         self.assertEqual(sleeps, [0.75])
+
+
+class ProviderFailureTests(unittest.TestCase):
+    def test_opt_in_failures_have_fixed_categories_without_provider_details(self):
+        response = requests.Response()
+        response.status_code = 429
+        throttled = requests.HTTPError("secret throttled body", response=response)
+        cases = (
+            (requests.Timeout("secret timeout body"), "timeout"),
+            (throttled, "throttled"),
+            (requests.ConnectionError("secret unavailable body"), "unavailable"),
+        )
+        for failure, category in cases:
+            with self.subTest(category=category):
+                client = ProviderClient(
+                    session=FakeSession([failure]),
+                    clock=lambda: 0,
+                    sleep=lambda _: None,
+                    raise_failures=True,
+                )
+                with self.assertRaises(ProviderFailure) as raised:
+                    client.match_species("Cyanocitta cristata")
+                self.assertEqual(raised.exception.category, category)
+                self.assertEqual(str(raised.exception), category)
+
+    def test_default_client_preserves_safe_none_failure_contract(self):
+        client = ProviderClient(
+            session=FakeSession([requests.Timeout("secret timeout body")]),
+            clock=lambda: 0,
+            sleep=lambda _: None,
+        )
+        self.assertIsNone(client.match_species("Cyanocitta cristata"))
+
+    def test_opt_in_transport_rejection_is_malformed(self):
+        client = ProviderClient(
+            session=FakeSession(
+                [FakeResponse(headers={"Content-Length": str(MAX_JSON_BYTES + 1)})]
+            ),
+            clock=lambda: 0,
+            sleep=lambda _: None,
+            raise_failures=True,
+        )
+        with self.assertRaises(ProviderFailure) as raised:
+            client.match_species("Cyanocitta cristata")
+        self.assertEqual(raised.exception.category, "malformed")
+
+    def test_opt_in_structural_rejection_is_malformed(self):
+        client = ProviderClient(
+            session=FakeSession([FakeResponse(json_data={"results": {}})]),
+            clock=lambda: 0,
+            sleep=lambda _: None,
+            raise_failures=True,
+        )
+        with self.assertRaises(ProviderFailure) as raised:
+            client.match_species("Cyanocitta cristata")
+        self.assertEqual(raised.exception.category, "malformed")
 
 
 class ProviderMatchTests(unittest.TestCase):

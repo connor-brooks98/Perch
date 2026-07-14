@@ -13,6 +13,7 @@ from werkzeug.exceptions import HTTPException
 
 from common import db
 from journal import queries
+from journal.enrichment import EnrichmentService
 from journal.labels import LabelCatalog
 
 
@@ -22,6 +23,8 @@ DEFAULTS = {
     "TZ": os.getenv("TZ", "America/New_York"),
     "MAX_PAGE_SIZE": 100,
     "DB_TIMEOUT_SECONDS": 0.05,
+    "ENRICHMENT_DIR": os.getenv("ENRICHMENT_DIR", "/data/web/enrichment"),
+    "ENRICHMENT_AUTOSTART": None,
 }
 
 T = TypeVar("T")
@@ -47,6 +50,19 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     if config:
         app.config.update(config)
     catalog = LabelCatalog.from_file(app.config["LABELS_PATH"])
+    provider = app.config.get("ENRICHMENT_PROVIDER")
+    enrichment = EnrichmentService(
+        app.config["DB_PATH"],
+        app.config["ENRICHMENT_DIR"],
+        provider=provider,
+        clock=app.config.get("ENRICHMENT_CLOCK"),
+    )
+    app.extensions["enrichment"] = enrichment
+    autostart = app.config.get("ENRICHMENT_AUTOSTART")
+    if autostart is None:
+        autostart = not app.config.get("TESTING")
+    if autostart:
+        enrichment.start()
 
     def error(code: str, status: int, *, message: str | None = None):
         payload: dict[str, Any] = {"error": code}

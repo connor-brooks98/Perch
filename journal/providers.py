@@ -29,6 +29,23 @@ MAX_REDIRECTS = 3
 MAX_REFERENCE_WIDTH = 960
 MAX_IMAGE_DIMENSION = 12_000
 MAX_IMAGE_PIXELS = 40_000_000
+FAILURE_CATEGORIES = {
+    "not_found",
+    "throttled",
+    "timeout",
+    "malformed",
+    "unavailable",
+}
+
+
+class ProviderFailure(Exception):
+    """A detail-free provider failure suitable for cache categorization."""
+
+    def __init__(self, category: str, _detail: str | None = None) -> None:
+        if category not in FAILURE_CATEGORIES:
+            raise ValueError("unknown provider failure category")
+        super().__init__(category)
+        self.category = category
 
 
 @dataclass(frozen=True)
@@ -90,10 +107,12 @@ class ProviderClient:
         session: requests.Session | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        raise_failures: bool = False,
     ) -> None:
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
         self._rate_gate = RateGate(clock=clock, sleep=sleep)
+        self._raise_failures = raise_failures
 
     def match_species(self, scientific_name: str) -> TaxonMatch | None:
         fields = (
@@ -104,12 +123,12 @@ class ProviderClient:
                 INATURALIST_TAXA_URL,
                 params={"q": scientific_name, "rank": "species", "fields": fields},
             )
-        except (requests.RequestException, RuntimeError, ValueError, TypeError):
-            return None
+        except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+            return self._handle_failure(exc)
 
         results = payload.get("results") if isinstance(payload, dict) else None
         if not isinstance(results, list):
-            return None
+            return self._reject("malformed")
 
         expected_name = scientific_name.casefold()
         for result in results:
@@ -144,8 +163,8 @@ class ProviderClient:
         summary_url = WIKIMEDIA_SUMMARY_URL + quote(title, safe="")
         try:
             payload = self._request_json(summary_url)
-        except (requests.RequestException, RuntimeError, ValueError, TypeError):
-            return None
+        except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+            return self._handle_failure(exc)
         if not isinstance(payload, dict):
             return None
         extract = payload.get("extract")
@@ -244,8 +263,8 @@ class ProviderClient:
                 license_code=photo.license_code,
                 source_url=photo.url,
             )
-        except (requests.RequestException, RuntimeError, ValueError, TypeError):
-            return None
+        except (requests.RequestException, RuntimeError, ValueError, TypeError) as exc:
+            return self._handle_failure(exc)
         finally:
             if response is not None:
                 response.close()
@@ -264,19 +283,45 @@ class ProviderClient:
             if declared_length is not None:
                 length = int(declared_length)
                 if length < 0 or length > MAX_JSON_BYTES:
-                    return None
+                    return self._reject("malformed")
 
             content = bytearray()
             for chunk in response.iter_content(chunk_size=IMAGE_CHUNK_BYTES):
                 if not chunk:
                     continue
                 if len(content) + len(chunk) > MAX_JSON_BYTES:
-                    return None
+                    return self._reject("malformed")
                 content.extend(chunk)
             return json.loads(content.decode("utf-8"))
         finally:
             if response is not None:
                 response.close()
+
+    def _handle_failure(self, exc: BaseException):
+        if isinstance(exc, requests.Timeout):
+            category = "timeout"
+        elif isinstance(exc, requests.HTTPError):
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 429:
+                category = "throttled"
+            elif status == 404:
+                category = "not_found"
+            else:
+                category = "unavailable"
+        elif isinstance(exc, requests.RequestException):
+            category = "unavailable"
+        elif isinstance(exc, (ValueError, TypeError, UnicodeError)):
+            category = "malformed"
+        else:
+            category = "unavailable"
+        if self._raise_failures:
+            raise ProviderFailure(category) from None
+        return None
+
+    def _reject(self, category: str):
+        if self._raise_failures:
+            raise ProviderFailure(category) from None
+        return None
 
     @staticmethod
     def _validated_photo(value: object) -> PhotoMetadata | None:
