@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import unittest
@@ -102,6 +103,22 @@ class JournalInstallationContractTests(unittest.TestCase):
             )
         ]
         self.assertIn('header Cache-Control "no-store"', dynamic_handler)
+
+    def test_caddy_enforces_self_hosted_browser_network_policy(self) -> None:
+        caddy = read("web/Caddyfile")
+        match = re.search(r'header Content-Security-Policy "([^"]+)"', caddy)
+        self.assertIsNotNone(match)
+        directives = {
+            parts[0]: parts[1:]
+            for directive in match.group(1).split(";")
+            if (parts := directive.strip().split())
+        }
+        self.assertEqual(directives["connect-src"], ["'self'"])
+        self.assertEqual(directives["img-src"], ["'self'", "data:"])
+        self.assertEqual(directives["default-src"], ["'self'"])
+        self.assertEqual(directives["style-src"], ["'self'", "'unsafe-inline'"])
+        self.assertNotIn("navigate-to", directives)
+        self.assertLess(caddy.index("basic_auth"), match.start())
 
     def test_frontend_provider_hosts_are_anchor_validation_only(self) -> None:
         scripts = {

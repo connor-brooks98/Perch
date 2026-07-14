@@ -14,6 +14,10 @@
 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
 	}
 
+	# Keep API, service-worker, and media requests local. Attribution anchors remain
+	# navigable because this policy intentionally does not restrict navigation.
+	header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+
 	handle /api/* {
 		reverse_proxy journal:8000
 	}
