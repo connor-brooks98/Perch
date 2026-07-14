@@ -1,5 +1,5 @@
 // Minimal offline shell. Caches the app frame; data is always fetched fresh.
-const CACHE = "perch-shell-v1";
+const CACHE = "perch-shell-v2";
 const SHELL = [
   "./",
   "index.html",
@@ -19,7 +19,10 @@ const SHELL = [
   "icons/perch-mark.svg",
   "icons/apple-touch-icon.png",
   "icons/icon-192.png",
-  "icons/icon-512.png"
+  "icons/icon-512.png",
+  "icons/icon-maskable-512.png",
+  "icons/favicon-32.png",
+  "favicon.ico"
 ];
 
 self.addEventListener("install", (e) => {
@@ -36,7 +39,12 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Never cache detection data or thumbnails — always go to network.
-  if (url.pathname.includes("/data/") || url.pathname.includes("/thumbs/")) return;
+  // Dynamic responses and media always go directly to the network.
+  if (
+    url.pathname.includes("/api/") ||
+    url.pathname.includes("/images/") ||
+    url.pathname.includes("/thumbs/") ||
+    url.pathname.includes("/enrichment/")
+  ) return;
   e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
 });

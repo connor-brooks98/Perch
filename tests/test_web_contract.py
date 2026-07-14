@@ -97,12 +97,17 @@ class WebContractTests(unittest.TestCase):
             "icons/apple-touch-icon.png",
             "icons/icon-192.png",
             "icons/icon-512.png",
+            "icons/icon-maskable-512.png",
+            "icons/favicon-32.png",
+            "favicon.ico",
         }
         self.assertLessEqual(modules | required, shell)
-        self.assertIn('const CACHE = "perch-shell-v1"', source)
+        self.assertIn('const CACHE = "perch-shell-v2"', source)
         self.assertNotIn("fieldlog-v1", source)
-        self.assertIn('url.pathname.includes("/data/")', source)
+        self.assertIn('url.pathname.includes("/api/")', source)
+        self.assertIn('url.pathname.includes("/images/")', source)
         self.assertIn('url.pathname.includes("/thumbs/")', source)
+        self.assertIn('url.pathname.includes("/enrichment/")', source)
 
     def test_api_client_builds_endpoints_and_uses_one_request_policy(self):
         result = run_javascript(
