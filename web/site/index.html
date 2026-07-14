@@ -3,69 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Backyard Field Log</title>
-  <meta name="description" content="Birds spotted at the feeder, identified on the fly." />
+  <title>Perch · Sara's Feeder</title>
+  <meta name="description" content="Sara's private family bird journal." />
   <meta name="theme-color" content="#E9EDE4" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
 
-  <header class="masthead">
-    <p class="eyebrow">Backyard Field Log</p>
-    <h1>Who's at the feeder</h1>
-    <dl class="stats" id="stats">
-      <div><dt>Species</dt><dd data-stat="species">—</dd></div>
-      <div><dt>Today</dt><dd data-stat="today">—</dd></div>
-      <div><dt>Logged</dt><dd data-stat="total">—</dd></div>
-    </dl>
+  <header class="app-header">
+    <a class="brand" href="#/today" aria-label="Perch, Sara's Feeder home">
+      <img src="icons/perch-mark.svg" alt="" width="40" height="40">
+      <span>Perch <small>Sara's Feeder</small></span>
+    </a>
+    <nav class="top-nav" aria-label="Journal">
+      <a href="#/today">Today</a><a href="#/birds">My Birds</a><a href="#/favorites">Favorites</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="latest" id="latest" hidden>
-      <p class="section-eyebrow">Latest visitor</p>
-      <article class="hero-card">
-        <div class="hero-photo"><img id="hero-img" alt="" loading="lazy" /></div>
-        <div class="hero-body">
-          <h2 class="species" id="hero-common"></h2>
-          <p class="scientific" id="hero-sci"></p>
-          <p class="when" id="hero-when"></p>
-          <div class="confidence" aria-label="identification confidence">
-            <span class="confidence-track"><span class="confidence-fill" id="hero-conf-fill"></span></span>
-            <span class="confidence-label" id="hero-conf-label"></span>
-          </div>
-        </div>
-      </article>
-    </section>
+  <main id="view" tabindex="-1"></main>
+  <p id="connection-status" class="status" role="status" aria-live="polite"></p>
 
-    <section class="feed">
-      <div class="feed-head">
-        <p class="section-eyebrow">Recent visits</p>
-        <input id="filter" class="filter" type="search" placeholder="Filter by species…"
-               autocomplete="off" spellcheck="false" aria-label="Filter by species" />
-      </div>
-      <div class="cards" id="cards"></div>
-      <p class="empty" id="empty" hidden>
-        No visitors yet. When a bird stops by the feeder, it'll show up here.
-      </p>
-    </section>
+  <nav class="bottom-nav" aria-label="Journal">
+    <a href="#/today">Today</a><a href="#/birds">My Birds</a><a href="#/favorites">Favorites</a>
+  </nav>
 
-    <section class="tally" id="tally" hidden>
-      <p class="section-eyebrow">Species seen</p>
-      <ul class="tally-list" id="tally-list"></ul>
-    </section>
-  </main>
-
-  <footer class="colophon">
-    <span id="updated">Loading…</span>
-    <button id="refresh" class="refresh" type="button">Refresh</button>
-  </footer>
-
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
