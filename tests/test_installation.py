@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,18 @@ def read(relative_path: str) -> str:
 
 
 class InstallationContractTests(unittest.TestCase):
+    def test_primary_docs_have_no_broken_local_markdown_links(self) -> None:
+        for relative_path in ("README.md", "Perch_Installation_Guide.md"):
+            document = read(relative_path)
+            for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", document):
+                if "://" in target or target.startswith("#"):
+                    continue
+                path_text = target.split("#", 1)[0]
+                self.assertTrue(
+                    (ROOT / path_text).exists(),
+                    f"{relative_path} links to missing local path {target}",
+                )
+
     def test_beginner_guide_is_linear_and_has_success_checkpoints(self) -> None:
         guide = read("Perch_Installation_Guide.md")
         self.assertIn("single authoritative", guide)
