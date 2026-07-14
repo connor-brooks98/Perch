@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-directories=(data/blink data/clips data/db data/web)
+directories=(data/blink data/clips data/db data/web data/web/images data/web/thumbs data/web/enrichment)
 mkdir -p "${directories[@]}"
 
 for directory in "${directories[@]}"; do

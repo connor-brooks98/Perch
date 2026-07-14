@@ -52,7 +52,15 @@ class InstallationContractTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            for relative_path in ("data/blink", "data/clips", "data/db", "data/web"):
+            for relative_path in (
+                "data/blink",
+                "data/clips",
+                "data/db",
+                "data/web",
+                "data/web/images",
+                "data/web/thumbs",
+                "data/web/enrichment",
+            ):
                 self.assertTrue((project / relative_path).is_dir(), relative_path)
             self.assertEqual((project / "data/blink").stat().st_mode & 0o777, 0o700)
             self.assertEqual((project / "data/db").stat().st_mode & 0o777, 0o700)
@@ -157,6 +165,7 @@ class InstallationContractTests(unittest.TestCase):
     def test_container_images_use_versioned_tags(self) -> None:
         self.assertIn("FROM python:3.11.15-slim-bookworm", read("puller/Dockerfile"))
         self.assertIn("FROM python:3.11.15-slim-bookworm", read("classifier/Dockerfile"))
+        self.assertIn("FROM python:3.11.15-slim-bookworm", read("journal/Dockerfile"))
         self.assertIn("FROM caddy:2.11.4-alpine", read("web/Dockerfile"))
         self.assertIn("cloudflare/cloudflared:2026.6.0", read("docker-compose.cloudflare.yml"))
 
@@ -166,6 +175,7 @@ class InstallationContractTests(unittest.TestCase):
     def test_python_images_disable_runtime_bytecode_writes(self) -> None:
         self.assertIn("PYTHONDONTWRITEBYTECODE=1", read("puller/Dockerfile"))
         self.assertIn("PYTHONDONTWRITEBYTECODE=1", read("classifier/Dockerfile"))
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", read("journal/Dockerfile"))
 
     def test_docker_build_context_excludes_secrets_and_runtime_data(self) -> None:
         ignored = {
@@ -245,7 +255,7 @@ class InstallationContractTests(unittest.TestCase):
         self.assertEqual(services["tunnel"]["environment"]["TUNNEL_TOKEN"], "test-tunnel-token")
         self.assertNotIn("test-tunnel-token", " ".join(services["tunnel"]["command"]))
 
-        for name in ("puller", "classifier", "web"):
+        for name in ("puller", "classifier", "journal", "web"):
             service = services[name]
             self.assertEqual(service["user"], "1000:1000", name)
             self.assertTrue(service["read_only"], name)
@@ -266,7 +276,11 @@ class InstallationContractTests(unittest.TestCase):
 
         self.assertEqual(set(services["puller"]["networks"]), {"puller-egress"})
         self.assertEqual(set(services["classifier"]["networks"]), {"classifier-egress"})
-        self.assertEqual(set(services["web"]["networks"]), {"web-edge"})
+        self.assertEqual(
+            set(services["journal"]["networks"]),
+            {"app-internal", "journal-egress"},
+        )
+        self.assertEqual(set(services["web"]["networks"]), {"app-internal", "web-edge"})
         self.assertEqual(set(services["tunnel"]["networks"]), {"web-edge"})
         self.assertNotIn("default", config["networks"])
 

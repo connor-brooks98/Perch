@@ -88,6 +88,37 @@ services:
     depends_on:
       - puller
 
+  journal:
+    <<: *default-security
+    build:
+      context: .
+      dockerfile: journal/Dockerfile
+    environment:
+      DB_PATH: /data/db/feeder.sqlite
+      LABELS_PATH: /app/model/labels.txt
+      TZ: ${TZ:-America/New_York}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ./data/db:/data/db
+      - ./classifier/model/current/labels.txt:/app/model/labels.txt:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    networks:
+      - app-internal
+      - journal-egress
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - classifier
+
   web:
     <<: *default-security
     build:
@@ -104,13 +135,15 @@ services:
       - /config:rw,noexec,nosuid,nodev,size=4m,uid=${PUID:-1000},gid=${PGID:-1000},mode=0700
     networks:
       - web-edge
+      - app-internal
     ports:
       - "8080:8080"
     restart: unless-stopped
     init: true
     logging: *default-logging
     depends_on:
-      - classifier
+      journal:
+        condition: service_healthy
 
 # Persistent state remains under ./data, but each service receives only the
 # subdirectories it needs. In particular, the web container cannot read Blink
@@ -119,4 +152,7 @@ services:
 networks:
   puller-egress:
   classifier-egress:
+  app-internal:
+    internal: true
+  journal-egress:
   web-edge:

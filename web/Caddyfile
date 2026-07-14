@@ -14,6 +14,10 @@
 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
 	}
 
+	handle /api/* {
+		reverse_proxy journal:8000
+	}
+
 	# Dynamic content the classifier writes lives on the /data volume.
 	@dynamic path /thumbs/* /data/*
 	handle @dynamic {
