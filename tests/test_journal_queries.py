@@ -197,10 +197,51 @@ class JournalQueryTests(unittest.TestCase):
         bounded_queries = [
             statement
             for statement in statements
-            if "ORDER BY e.captured_at DESC, e.id DESC LIMIT 3" in statement
+            if "GROUP BY" in statement and "LIMIT 3" in statement
         ]
         self.assertEqual(len(collection["species"]), 3)
         self.assertTrue(bounded_queries)
+        self.assertLess(
+            bounded_queries[-1].rindex("GROUP BY"),
+            bounded_queries[-1].rindex("LIMIT 3"),
+        )
+
+    def test_species_limit_is_applied_after_complete_album_aggregation(self) -> None:
+        self.add_detection(
+            common="American Robin",
+            scientific="Turdus migratorius",
+            captured_at="2026-01-01T12:00:00Z",
+        )
+        oldest_blue_id = self.add_detection(
+            captured_at="2026-02-01T12:00:00Z"
+        )
+        queries.patch_detection(
+            self.conn, oldest_blue_id, {"favorite": True}, self.catalog
+        )
+        for index in range(101):
+            self.add_detection(
+                captured_at=(
+                    f"2026-07-{13 + index // 24:02d}T{index % 24:02d}:00:00Z"
+                )
+            )
+
+        collection = queries.species(
+            self.conn, query="", sort="recent", limit=2
+        )
+        searched = queries.species(
+            self.conn, query="robin", sort="recent", limit=1
+        )
+
+        self.assertEqual(len(collection["species"]), 2)
+        blue_jay = collection["species"][0]
+        self.assertEqual(blue_jay["common_name"], "Blue Jay")
+        self.assertEqual(blue_jay["visits"], 102)
+        self.assertEqual(blue_jay["first_seen"], "2026-02-01T12:00:00Z")
+        self.assertEqual(blue_jay["thumbnail"], f"thumbs/{oldest_blue_id}.jpg")
+        self.assertEqual(
+            searched["species"][0]["common_name"], "American Robin"
+        )
+        self.assertEqual(searched["species"][0]["visits"], 1)
 
     def test_common_only_correction_does_not_retain_original_scientific_name(self) -> None:
         corrected_id = self.add_detection()

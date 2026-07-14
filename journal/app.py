@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from common import db
 from journal import queries
@@ -113,7 +114,15 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         return error("internal_error", 500)
 
     @app.errorhandler(Exception)
-    def unexpected_error(_exc):
+    def unexpected_error(exc):
+        if isinstance(exc, HTTPException):
+            status = exc.code or 500
+            code = {
+                400: "bad_request",
+                404: "not_found",
+                405: "method_not_allowed",
+            }.get(status, "http_error")
+            return error(code, status)
         log.error("journal_api_error category=unexpected")
         return error("internal_error", 500)
 

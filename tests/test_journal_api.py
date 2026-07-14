@@ -280,11 +280,21 @@ class JournalApiTests(unittest.TestCase):
 
     def test_journal_connection_uses_configured_short_busy_timeout(self) -> None:
         self.assertIn("timeout_seconds", inspect.signature(db.connect).parameters)
-        conn = db.connect(self.db_path, timeout_seconds=0.012)
+        default_conn = db.connect(self.db_path)
         try:
-            self.assertEqual(conn.execute("PRAGMA busy_timeout").fetchone()[0], 12)
+            self.assertEqual(
+                default_conn.execute("PRAGMA busy_timeout").fetchone()[0], 5000
+            )
         finally:
-            conn.close()
+            default_conn.close()
+
+        journal_conn = db.connect(self.db_path, timeout_seconds=0.05)
+        try:
+            self.assertEqual(
+                journal_conn.execute("PRAGMA busy_timeout").fetchone()[0], 50
+            )
+        finally:
+            journal_conn.close()
 
         with mock.patch("journal.app.db.connect", wraps=db.connect) as connect:
             response = self.client.get("/api/health")
@@ -306,6 +316,13 @@ class JournalApiTests(unittest.TestCase):
         self.assertIn("category=unexpected", logs)
         self.assertNotIn(secret, logs)
         self.assertNotIn("Traceback", logs)
+
+    def test_http_exceptions_preserve_sanitized_status(self) -> None:
+        response = self.client.post("/api/health")
+
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json, {"error": "method_not_allowed"})
+        self.assertNotIn("Method Not Allowed", response.get_data(as_text=True))
 
 
 if __name__ == "__main__":

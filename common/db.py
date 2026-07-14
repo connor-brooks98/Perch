@@ -18,7 +18,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def connect(db_path: str | Path, *, timeout_seconds: float = 30) -> sqlite3.Connection:
+def connect(db_path: str | Path, *, timeout_seconds: float = 5) -> sqlite3.Connection:
     """Open (and initialise, if needed) the shared database."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)

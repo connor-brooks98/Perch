@@ -48,6 +48,12 @@ def _register_sql_functions(conn: sqlite3.Connection) -> None:
     conn.create_function(
         "journal_local_hour", 2, _local_hour, deterministic=True
     )
+    conn.create_function(
+        "journal_casefold",
+        1,
+        lambda value: (value or "").casefold(),
+        deterministic=True,
+    )
 
 
 def _local_hour(captured_at: str, tz_name: str) -> int:
@@ -149,18 +155,11 @@ def _effective_rows(
     conn: sqlite3.Connection,
     *,
     include_excluded: bool = False,
-    limit: int | None = None,
 ):
     where = "" if include_excluded else " WHERE e.excluded = 0"
-    limit_clause = ""
-    parameters: tuple[int, ...] = ()
-    if limit is not None:
-        limit_clause = " LIMIT ?"
-        parameters = (_bounded_limit(limit),)
     return conn.execute(
         f"SELECT * FROM ({EFFECTIVE_SQL}) e{where} "
-        f"ORDER BY e.captured_at DESC, e.id DESC{limit_clause}",
-        parameters,
+        "ORDER BY e.captured_at DESC, e.id DESC"
     ).fetchall()
 
 
@@ -319,67 +318,66 @@ def today(
     }
 
 
-def _album_rows(conn: sqlite3.Connection, limit: int) -> list[dict[str, Any]]:
-    grouped: dict[str, list[sqlite3.Row]] = {}
-    for row in _effective_rows(conn, limit=limit):
-        key = species_key(row["effective_common"], row["effective_scientific"])
-        grouped.setdefault(key, []).append(row)
-    keys = tuple(grouped)
-    opened = set()
-    if keys:
-        placeholders = ", ".join("?" for _key in keys)
-        opened = {
-            row["species_key"]
-            for row in conn.execute(
-                f"SELECT species_key FROM species_journal_state "
-                f"WHERE species_key IN ({placeholders})",
-                keys,
-            )
-        }
-    albums = []
-    for key, rows in grouped.items():
-        newest = rows[0]
-        oldest = rows[-1]
-        favorite_cover = next((row for row in rows if row["favorite"]), newest)
-        albums.append(
-            {
-                "species_key": key,
-                "common_name": newest["effective_common"],
-                "scientific": newest["effective_scientific"],
-                "visits": len(rows),
-                "first_seen": oldest["captured_at"],
-                "last_seen": newest["captured_at"],
-                "thumbnail": favorite_cover["thumbnail"],
-                "is_new": key not in opened,
-            }
-        )
-    return albums
-
-
 def species(
     conn: sqlite3.Connection, *, query: str, sort: str, limit: int = MAX_PAGE_SIZE
 ) -> dict[str, Any]:
-    albums = _album_rows(conn, _bounded_limit(limit))
+    bounded = _bounded_limit(limit)
     needle = " ".join(query.casefold().split())
-    if needle:
-        albums = [
-            album
-            for album in albums
-            if needle in album["common_name"].casefold()
-            or needle in (album["scientific"] or "").casefold()
-        ]
-    sorts = {
-        "newest": lambda album: (album["first_seen"], album["species_key"]),
-        "visits": lambda album: (album["visits"], album["last_seen"], album["species_key"]),
-        "recent": lambda album: (album["last_seen"], album["species_key"]),
+    order_by = {
+        "newest": "a.first_seen DESC, a.species_key DESC",
+        "visits": "a.visits DESC, a.last_seen DESC, a.species_key DESC",
+        "recent": "a.last_seen DESC, a.species_key DESC",
+        "alphabetical": (
+            "journal_casefold(a.common_name) ASC, a.species_key ASC"
+        ),
     }
-    if sort == "alphabetical":
-        albums.sort(key=lambda album: (album["common_name"].casefold(), album["species_key"]))
-    elif sort in sorts:
-        albums.sort(key=sorts[sort], reverse=True)
-    else:
+    if sort not in order_by:
         raise ValueError("unsupported species sort")
-    return {"species": albums}
+    _register_sql_functions(conn)
+    rows = conn.execute(
+        f"WITH keyed AS ("
+        f"SELECT e.*, "
+        f"journal_species_key(e.effective_common, e.effective_scientific) "
+        f"AS species_key FROM ({EFFECTIVE_SQL}) e WHERE e.excluded = 0"
+        f"), ranked AS ("
+        f"SELECT k.*, "
+        f"ROW_NUMBER() OVER (PARTITION BY k.species_key "
+        f"ORDER BY k.captured_at DESC, k.id DESC) AS newest_rank, "
+        f"ROW_NUMBER() OVER (PARTITION BY k.species_key "
+        f"ORDER BY k.favorite DESC, k.captured_at DESC, k.id DESC) "
+        f"AS cover_rank FROM keyed k"
+        f"), albums AS ("
+        f"SELECT r.species_key, "
+        f"MAX(CASE WHEN r.newest_rank = 1 THEN r.effective_common END) "
+        f"AS common_name, "
+        f"MAX(CASE WHEN r.newest_rank = 1 THEN r.effective_scientific END) "
+        f"AS scientific, COUNT(*) AS visits, "
+        f"MIN(r.captured_at) AS first_seen, MAX(r.captured_at) AS last_seen, "
+        f"MAX(CASE WHEN r.cover_rank = 1 THEN r.thumbnail END) AS thumbnail "
+        f"FROM ranked r GROUP BY r.species_key"
+        f") SELECT a.*, s.species_key IS NULL AS is_new "
+        f"FROM albums a LEFT JOIN species_journal_state s "
+        f"ON s.species_key = a.species_key "
+        f"WHERE ? = '' OR instr(journal_casefold(a.common_name), ?) > 0 "
+        f"OR instr(journal_casefold(a.scientific), ?) > 0 "
+        f"ORDER BY {order_by[sort]} LIMIT ?",
+        (needle, needle, needle, bounded),
+    ).fetchall()
+    return {
+        "species": [
+            {
+                "species_key": row["species_key"],
+                "common_name": row["common_name"],
+                "scientific": row["scientific"],
+                "visits": row["visits"],
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+                "thumbnail": row["thumbnail"],
+                "is_new": bool(row["is_new"]),
+            }
+            for row in rows
+        ]
+    }
 
 
 def species_detail(
