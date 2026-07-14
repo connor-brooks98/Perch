@@ -43,6 +43,26 @@ HEARTBEAT_EVERY = int(os.getenv("HEARTBEAT_EVERY", "12"))  # cycles between "ok"
 
 # Matches blinkpy's to_alphanumeric(created_at): FeederCam_20240105T1322090000.mp4
 TS_RE = re.compile(r"(\d{8})T(\d{6})")
+BLINK_SINCE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+LEGACY_SINCE_FORMAT = "%Y/%m/%d %H:%M"
+
+
+def format_blink_since(value: datetime) -> str:
+    """Format a Blink cursor without discarding its UTC timezone."""
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("Blink cursor datetime must be timezone-aware")
+    return value.astimezone(timezone.utc).strftime(BLINK_SINCE_FORMAT)
+
+
+def normalize_blink_since(value: str) -> str:
+    """Upgrade the old timezone-less UTC cursor to an explicit UTC cursor."""
+    try:
+        parsed = datetime.strptime(value, BLINK_SINCE_FORMAT)
+    except ValueError:
+        parsed = datetime.strptime(value, LEGACY_SINCE_FORMAT).replace(
+            tzinfo=timezone.utc
+        )
+    return format_blink_since(parsed)
 
 
 def parse_captured_at(filename: str, fallback_path: Path) -> str:
@@ -107,8 +127,12 @@ async def poll_once(blink: Blink, conn) -> int:
     await blink.refresh()
 
     last_since = db.get_state(conn, "last_since")
-    if not last_since:
-        last_since = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y/%m/%d %H:%M")
+    if last_since:
+        last_since = normalize_blink_since(last_since)
+    else:
+        last_since = format_blink_since(
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        )
 
     # download_videos is the most version-fragile blinkpy call. Let failures
     # bubble to the outer loop so they trigger ntfy + session rebuild instead
@@ -140,8 +164,10 @@ async def poll_once(blink: Blink, conn) -> int:
     # that landed mid-cycle, while still moving forward over time.
     newest = conn.execute("SELECT MAX(captured_at) AS m FROM clips").fetchone()["m"]
     if newest:
-        dt = datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ") - timedelta(minutes=2)
-        db.set_state(conn, "last_since", dt.strftime("%Y/%m/%d %H:%M"))
+        dt = datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        ) - timedelta(minutes=2)
+        db.set_state(conn, "last_since", format_blink_since(dt))
 
     prune_old_clips(conn)
     return added
