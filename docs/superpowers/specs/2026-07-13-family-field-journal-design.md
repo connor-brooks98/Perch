@@ -19,6 +19,7 @@ The release must preserve Perch's self-hosted character, current Blink ingestion
 - Every identified display image and thumbnail is retained indefinitely.
 - Favorites and species corrections are included in the first release.
 - Species profiles combine Perch's own history with locally cached public enrichment.
+- The installed web application is branded **Perch** and always uses the Perch bird mark rather than a generic browser-generated icon.
 - Home Assistant is out of scope.
 
 ## User experience
@@ -52,6 +53,22 @@ Each species profile contains:
 ### Favorites
 
 Favorites is one shared family album ordered newest first. Favoriting and unfavoriting are idempotent. The state is visible on the landing page, visit detail, species gallery, and favorites album without a page reload.
+
+### Application identity and home-screen installation
+
+The existing stylized bird mark becomes the canonical Perch application logo. The page header may pair the mark with “Perch · Sara's Feeder,” while the installed application uses **Perch** as its short name and **Perch · Sara's Feeder** as its full name.
+
+The same mark must be delivered as:
+
+- A normal 192×192 PNG icon.
+- A normal 512×512 PNG icon.
+- A dedicated 512×512 maskable PNG whose important artwork remains inside the maskable safe zone.
+- A 180×180 Apple touch icon.
+- Standard browser favicon assets.
+
+The HTML explicitly links the manifest, Apple touch icon, and favicon. The manifest declares the normal and maskable assets separately rather than labeling the same edge-to-edge file for both purposes. Home-screen launch uses the journal root URL, standalone display mode, and the approved journal background and theme colors.
+
+Changing the application name or icon set must also advance the service-worker cache version so an update does not leave previously installed devices with stale Field Log branding. Reinstalling must not be required for ordinary future interface updates, though operating systems may retain an old icon until their normal home-screen cache refresh.
 
 ### Visit details and corrections
 
@@ -200,6 +217,7 @@ Interaction requirements:
 - Use optimistic favorite and correction updates, but roll back visibly when the request fails.
 - Preserve the user's current page and filters during automatic refreshes.
 - Never inject provider HTML; render returned text through `textContent`.
+- Keep the document title, manifest names, theme metadata, logo text alternative, and install icons consistently branded as Perch.
 
 The service worker caches the application shell, not authenticated API responses or journal images. A stale shell may open offline and explain that journal data requires a connection to the feeder rather than displaying misleading cached counts.
 
@@ -220,8 +238,9 @@ The service worker caches the application shell, not authenticated API responses
 2. Treat each existing detection's current thumbnail as both its display and thumbnail image.
 3. Stop pruning identified images during dashboard regeneration.
 4. Add the journal service and Caddy `/api/*` proxy before switching the frontend to API reads.
-5. Keep old detection rows and raw-clip retention settings unchanged.
-6. Verify that current empty and populated installations both start without manual database work.
+5. Replace the legacy Field Log manifest metadata with Perch branding, add distinct normal/maskable icon files, and advance the application-shell cache version.
+6. Keep old detection rows and raw-clip retention settings unchanged.
+7. Verify that current empty and populated installations both start without manual database work.
 
 Rollback may return to the old static frontend without losing original detections. New annotation and enrichment tables are additive and can remain unused. Newly generated larger images are also harmless to the older frontend.
 
@@ -262,6 +281,8 @@ Rollback may return to the old static frontend without losing original detection
 - Keyboard-only navigation, focus visibility, accessible names, contrast, and reduced motion.
 - Optimistic interaction success and visible rollback on failure.
 - PWA shell update and offline explanation behavior.
+- Manifest validation, icon dimensions, unique normal/maskable assets, maskable safe-zone inspection, and cache-version coverage.
+- Actual Add to Home Screen installation on current iOS Safari and installation from current Android Chrome, verifying the Perch name, bird logo, standalone launch, start URL, theme color, and background color.
 
 The complete existing test suite must continue to pass. Deployment verification must include a Raspberry Pi build, health checks, an authenticated local browser session, and a phone-sized remote session through the existing private access path.
 
