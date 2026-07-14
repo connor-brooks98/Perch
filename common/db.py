@@ -191,16 +191,27 @@ def add_detection(
     confidence: float,
     captured_at: str,
     thumbnail: str,
+    display_image: str,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO detections"
-        "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, created_at) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?) "
+        "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, display_image, created_at) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(clip_id) DO UPDATE SET "
         "  common_name = excluded.common_name, scientific = excluded.scientific, "
         "  confidence  = excluded.confidence,  captured_at = excluded.captured_at, "
-        "  thumbnail   = excluded.thumbnail,   created_at  = excluded.created_at",
-        (clip_id, common_name, scientific, confidence, captured_at, thumbnail, now_iso()),
+        "  thumbnail   = excluded.thumbnail, display_image = excluded.display_image, "
+        "  created_at  = excluded.created_at",
+        (
+            clip_id,
+            common_name,
+            scientific,
+            confidence,
+            captured_at,
+            thumbnail,
+            display_image,
+            now_iso(),
+        ),
     )
     conn.commit()
     return cur.lastrowid
@@ -214,18 +225,29 @@ def finish_clip_with_detection(
     confidence: float,
     captured_at: str,
     thumbnail: str,
+    display_image: str,
 ) -> None:
     """Atomically upsert a detection and mark its source clip done."""
     with conn:
         conn.execute(
             "INSERT INTO detections"
-            "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, created_at) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "(clip_id, common_name, scientific, confidence, captured_at, thumbnail, display_image, created_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(clip_id) DO UPDATE SET "
             "  common_name = excluded.common_name, scientific = excluded.scientific, "
             "  confidence  = excluded.confidence,  captured_at = excluded.captured_at, "
-            "  thumbnail   = excluded.thumbnail,   created_at  = excluded.created_at",
-            (clip_id, common_name, scientific, confidence, captured_at, thumbnail, now_iso()),
+            "  thumbnail   = excluded.thumbnail, display_image = excluded.display_image, "
+            "  created_at  = excluded.created_at",
+            (
+                clip_id,
+                common_name,
+                scientific,
+                confidence,
+                captured_at,
+                thumbnail,
+                display_image,
+                now_iso(),
+            ),
         )
         conn.execute(
             "UPDATE clips SET status = ?, note = ?, next_attempt_at = NULL, "

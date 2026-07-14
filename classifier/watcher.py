@@ -2,8 +2,8 @@
 
 Polls the DB for 'pending' clips. For each: pull a few representative frames
 with ffmpeg, classify them, keep the single highest-confidence identification,
-save a thumbnail, and record the detection. After each pass it regenerates the
-static JSON the dashboard reads.
+publish display and thumbnail images, and record the detection. After each pass
+it regenerates the static JSON the dashboard reads.
 """
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+from PIL import Image
 
 sys.path.insert(0, "/app")
 from common import db, notify  # noqa: E402
@@ -35,10 +37,12 @@ LABELS_PATH = os.getenv("LABELS_PATH", "/app/model/current/labels.txt")
 THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.30"))
 FRAMES_PER_CLIP = int(os.getenv("FRAMES_PER_CLIP", "4"))
 WATCH_INTERVAL = int(os.getenv("WATCH_INTERVAL", "20"))
+DISPLAY_WIDTH = int(os.getenv("DISPLAY_WIDTH", "1280"))
 THUMB_WIDTH = int(os.getenv("THUMB_WIDTH", "480"))
 MAX_CLIP_ATTEMPTS = max(1, int(os.getenv("MAX_CLIP_ATTEMPTS", "3")))
 CLIP_RETRY_DELAY = max(0, int(os.getenv("CLIP_RETRY_DELAY", "60")))
 
+IMAGES_DIR = WEB_DIR / "images"
 THUMBS_DIR = WEB_DIR / "thumbs"
 DATA_DIR = WEB_DIR / "data"
 
@@ -80,18 +84,24 @@ def extract_frames(path: Path, count: int, workdir: Path) -> list[Path]:
     return frames
 
 
-def save_thumbnail(frame: Path, clip_id: int) -> str:
-    from PIL import Image
+def _atomic_jpeg(source: Image.Image, target: Path, max_width: int, quality: int) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    image = source.copy()
+    if image.width > max_width:
+        height = round(image.height * max_width / image.width)
+        image = image.resize((max_width, height), Image.Resampling.LANCZOS)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    image.save(temporary, "JPEG", quality=quality, optimize=True)
+    temporary.replace(target)
 
-    THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+
+def publish_detection_images(frame: Path, clip_id: int) -> tuple[str, str]:
     name = f"{clip_id}.jpg"
     with Image.open(frame) as opened:
-        img = opened.convert("RGB")
-    if img.width > THUMB_WIDTH:
-        h = round(img.height * THUMB_WIDTH / img.width)
-        img = img.resize((THUMB_WIDTH, h), Image.LANCZOS)
-    img.save(THUMBS_DIR / name, "JPEG", quality=82)
-    return f"thumbs/{name}"
+        rgb = opened.convert("RGB")
+        _atomic_jpeg(rgb, IMAGES_DIR / name, DISPLAY_WIDTH, 88)
+        _atomic_jpeg(rgb, THUMBS_DIR / name, THUMB_WIDTH, 82)
+    return f"images/{name}", f"thumbs/{name}"
 
 
 def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
@@ -120,7 +130,7 @@ def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
             db.mark_clip(conn, clip["id"], "done", note)
             return None
 
-        thumb = save_thumbnail(best_frame, clip["id"])
+        display, thumb = publish_detection_images(best_frame, clip["id"])
         db.finish_clip_with_detection(
             conn,
             clip["id"],
@@ -129,6 +139,7 @@ def process_clip(clf: BirdClassifier, conn, clip) -> str | None:
             best.confidence,
             clip["captured_at"],
             thumb,
+            display,
         )
         log.info("clip %s -> %s (%.2f)", clip["filename"], best.common_name, best.confidence)
         return best.common_name
@@ -204,18 +215,6 @@ def regenerate_json(conn) -> None:
     tmp = DATA_DIR / "detections.json.tmp"
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(DATA_DIR / "detections.json")  # atomic swap so readers never see half a file
-
-    # Thumbnails accumulate forever otherwise (only raw clips get pruned). Drop
-    # any thumb not referenced by the current window; it's off the dashboard.
-    if THUMBS_DIR.exists():
-        keep = {Path(d["thumbnail"]).name for d in detections if d["thumbnail"]}
-        for f in THUMBS_DIR.glob("*.jpg"):
-            if f.name not in keep:
-                try:
-                    f.unlink()
-                except OSError:
-                    pass
-
 
 def run() -> None:
     WEB_DIR.mkdir(parents=True, exist_ok=True)

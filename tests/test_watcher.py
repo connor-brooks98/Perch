@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from PIL import Image
+
 from common import db
 
 
@@ -97,6 +99,28 @@ class WatcherRecoveryTests(unittest.TestCase):
 
         row = self.conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
         self.assertEqual(row["status"], "processing")
+
+    def test_publish_detection_images_creates_two_atomic_sizes(self) -> None:
+        frame = self.root / "source.jpg"
+        Image.new("RGB", (2000, 1200), "#67805a").save(frame)
+        with mock.patch.object(watcher, "IMAGES_DIR", self.root / "images"), mock.patch.object(
+            watcher, "THUMBS_DIR", self.root / "thumbs"
+        ):
+            display, thumb = watcher.publish_detection_images(frame, 42)
+        with Image.open(self.root / display) as large, Image.open(self.root / thumb) as small:
+            self.assertLessEqual(large.width, 1280)
+            self.assertLessEqual(small.width, 480)
+        self.assertEqual(list(self.root.rglob("*.tmp")), [])
+
+    def test_regenerate_json_does_not_delete_old_images(self) -> None:
+        old = self.root / "thumbs" / "old.jpg"
+        old.parent.mkdir()
+        old.write_bytes(b"kept")
+        with mock.patch.object(watcher, "WEB_DIR", self.root), mock.patch.object(
+            watcher, "DATA_DIR", self.root / "data"
+        ), mock.patch.object(watcher, "THUMBS_DIR", old.parent):
+            watcher.regenerate_json(self.conn)
+        self.assertTrue(old.exists())
 
 
 if __name__ == "__main__":
