@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS detections (
     confidence    REAL    NOT NULL,
     captured_at   TEXT    NOT NULL,         -- copied from the clip for easy sorting
     thumbnail     TEXT    NOT NULL,         -- basename under web/thumbs
+    display_image TEXT,
     created_at    TEXT    NOT NULL
 );
 
@@ -41,6 +42,21 @@ CREATE INDEX IF NOT EXISTS idx_det_species  ON detections(common_name);
 -- db.add_detection(). (If an existing DB already has duplicate clip_ids, dedupe
 -- them once before this index will build.)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_det_clip ON detections(clip_id);
+
+CREATE TABLE IF NOT EXISTS detection_annotations (
+    detection_id INTEGER PRIMARY KEY REFERENCES detections(id) ON DELETE CASCADE,
+    favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
+    corrected_common_name TEXT,
+    corrected_scientific TEXT,
+    excluded INTEGER NOT NULL DEFAULT 0 CHECK (excluded IN (0, 1)),
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_annotations_favorite ON detection_annotations(favorite);
+
+CREATE TABLE IF NOT EXISTS species_journal_state (
+    species_key TEXT PRIMARY KEY,
+    opened_at TEXT NOT NULL
+);
 
 -- Tiny key/value store for cursors (e.g. last 'since' timestamp for the puller).
 CREATE TABLE IF NOT EXISTS state (

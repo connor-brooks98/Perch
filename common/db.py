@@ -33,6 +33,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(SCHEMA_PATH.read_text())
     _migrate_clips(conn)
+    _migrate_detections(conn)
     return conn
 
 
@@ -51,6 +52,17 @@ def _migrate_clips(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_clips_ready "
             "ON clips(status, next_attempt_at, captured_at)"
+        )
+
+
+def _migrate_detections(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(detections)")}
+    with conn:
+        if "display_image" not in columns:
+            conn.execute("ALTER TABLE detections ADD COLUMN display_image TEXT")
+        conn.execute(
+            "UPDATE detections SET display_image = thumbnail "
+            "WHERE display_image IS NULL OR display_image = ''"
         )
 
 
