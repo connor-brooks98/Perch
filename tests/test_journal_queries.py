@@ -176,6 +176,41 @@ class JournalQueryTests(unittest.TestCase):
             ]
         )
 
+    def test_common_only_correction_does_not_retain_original_scientific_name(self) -> None:
+        corrected_id = self.add_detection()
+        original_id = self.add_detection(
+            common="House Sparrow", scientific=None, filename="house-sparrow.mp4"
+        )
+
+        corrected = queries.patch_detection(
+            self.conn,
+            corrected_id,
+            {"correction": "House Sparrow"},
+            self.catalog,
+        )
+        collection = queries.species(self.conn, query="sparrow", sort="newest")
+        album = collection["species"][0]
+        history = queries.detections(
+            self.conn,
+            cursor=None,
+            limit=20,
+            species_key="common:house sparrow",
+            favorite=None,
+            local_date=None,
+            tz_name="America/New_York",
+        )
+
+        self.assertIsNone(corrected["effective_species"]["scientific"])
+        self.assertEqual(corrected["species_key"], "common:house sparrow")
+        self.assertEqual(len(collection["species"]), 1)
+        self.assertIsNone(album["scientific"])
+        self.assertEqual(album["species_key"], "common:house sparrow")
+        self.assertEqual(album["visits"], 2)
+        self.assertEqual(
+            {corrected_id, original_id},
+            {item["id"] for item in history["detections"]},
+        )
+
     def test_mark_species_opened_rejects_missing_or_excluded_album(self) -> None:
         detection_id = self.add_detection()
         key = queries.species_key("Blue Jay", "Cyanocitta cristata")
@@ -224,6 +259,40 @@ class JournalQueryTests(unittest.TestCase):
 
         self.assertTrue(set(first_ids).isdisjoint(item["id"] for item in second["detections"]))
         self.assertEqual(len(capped["detections"]), 100)
+
+    def test_species_history_filters_and_limits_inside_sql(self) -> None:
+        for index in range(6):
+            self.add_detection(captured_at=f"2026-07-13T{index:02d}:00:00Z")
+            self.add_detection(
+                common="American Robin",
+                scientific="Turdus migratorius",
+                captured_at=f"2026-07-12T{index:02d}:00:00Z",
+            )
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            result = queries.detections(
+                self.conn,
+                cursor=None,
+                limit=2,
+                species_key="sci:cyanocitta cristata",
+                favorite=None,
+                local_date=None,
+                tz_name="America/New_York",
+            )
+        finally:
+            self.conn.set_trace_callback(None)
+
+        page_queries = [
+            statement
+            for statement in statements
+            if "ORDER BY e.captured_at DESC, e.id DESC" in statement
+        ]
+        self.assertEqual(len(result["detections"]), 2)
+        self.assertIsNotNone(result["next_cursor"])
+        self.assertTrue(page_queries)
+        self.assertIn("journal_species_key", page_queries[-1])
+        self.assertIn("LIMIT 3", page_queries[-1])
 
     def test_malformed_cursor_is_rejected(self) -> None:
         malformed = [
@@ -303,6 +372,39 @@ class JournalQueryTests(unittest.TestCase):
         self.assertEqual(detail["gallery"][0]["id"], newer)
         self.assertIsNotNone(detail["next_cursor"])
         self.assertEqual(detail["busiest_hours"], [10])
+
+    def test_species_detail_filters_and_limits_gallery_inside_sql(self) -> None:
+        for index in range(5):
+            self.add_detection(captured_at=f"2026-07-13T{index:02d}:00:00Z")
+            self.add_detection(
+                common="American Robin",
+                scientific="Turdus migratorius",
+                captured_at=f"2026-07-12T{index:02d}:00:00Z",
+            )
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            detail = queries.species_detail(
+                self.conn,
+                "sci:cyanocitta cristata",
+                cursor=None,
+                limit=2,
+            )
+        finally:
+            self.conn.set_trace_callback(None)
+
+        page_queries = [
+            statement
+            for statement in statements
+            if statement.startswith("SELECT * FROM (")
+            and "ORDER BY e.captured_at DESC, e.id DESC" in statement
+        ]
+        self.assertEqual(len(detail["gallery"]), 2)
+        self.assertEqual(detail["visits"], 5)
+        self.assertIsNotNone(detail["next_cursor"])
+        self.assertTrue(page_queries)
+        self.assertIn("journal_species_key", page_queries[-1])
+        self.assertIn("LIMIT 3", page_queries[-1])
 
     def test_open_journal_connection_does_not_block_second_wal_writer(self) -> None:
         self.add_detection()

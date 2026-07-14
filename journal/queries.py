@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
-from collections import Counter
 from datetime import date, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -16,7 +15,9 @@ MAX_PAGE_SIZE = 100
 
 EFFECTIVE_SQL = """
 SELECT d.*, COALESCE(NULLIF(a.corrected_common_name,''), d.common_name) AS effective_common,
-       COALESCE(NULLIF(a.corrected_scientific,''), d.scientific) AS effective_scientific,
+       CASE WHEN a.corrected_common_name IS NOT NULL
+            THEN NULLIF(a.corrected_scientific,'') ELSE d.scientific
+       END AS effective_scientific,
        COALESCE(a.favorite, 0) AS favorite, COALESCE(a.excluded, 0) AS excluded,
        a.corrected_common_name IS NOT NULL AS corrected
 FROM detections d LEFT JOIN detection_annotations a ON a.detection_id = d.id
@@ -38,6 +39,20 @@ def _utc_now() -> datetime:
 def species_key(common: str, scientific: str | None) -> str:
     value = " ".join((scientific or common).strip().casefold().split())
     return ("sci:" if scientific else "common:") + value
+
+
+def _register_sql_functions(conn: sqlite3.Connection) -> None:
+    conn.create_function(
+        "journal_species_key", 2, species_key, deterministic=True
+    )
+    conn.create_function(
+        "journal_local_hour", 2, _local_hour, deterministic=True
+    )
+
+
+def _local_hour(captured_at: str, tz_name: str) -> int:
+    captured = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    return captured.astimezone(_zone(tz_name)).hour
 
 
 def _zone(tz_name: str) -> ZoneInfo:
@@ -233,23 +248,20 @@ def detections(
         start, end = _day_bounds(local_date, tz_name)
         clauses.extend(("e.captured_at >= ?", "e.captured_at < ?"))
         parameters.extend((start, end))
+    if species_key is not None:
+        _register_sql_functions(conn)
+        clauses.append(
+            "journal_species_key(e.effective_common, e.effective_scientific) = ?"
+        )
+        parameters.append(species_key)
+    parameters.append(bounded + 1)
     rows = conn.execute(
         f"SELECT * FROM ({EFFECTIVE_SQL}) e WHERE {' AND '.join(clauses)} "
-        "ORDER BY e.captured_at DESC, e.id DESC",
+        "ORDER BY e.captured_at DESC, e.id DESC LIMIT ?",
         parameters,
     ).fetchall()
-    if species_key is not None:
-        rows = [
-            row
-            for row in rows
-            if globals()["species_key"](
-                row["effective_common"], row["effective_scientific"]
-            )
-            == species_key
-        ]
-    page = rows[: bounded + 1]
-    has_more = len(page) > bounded
-    page = page[:bounded]
+    has_more = len(rows) > bounded
+    page = rows[:bounded]
     return {
         "detections": [_serialize_detection(row) for row in page],
         "next_cursor": _encode_cursor(page[-1]) if has_more else None,
@@ -358,48 +370,65 @@ def species_detail(
     tz_name: str = "America/New_York",
 ) -> dict[str, Any] | None:
     bounded = _bounded_limit(limit)
-    zone = _zone(tz_name)
-    rows = [
-        row
-        for row in _effective_rows(conn)
-        if globals()["species_key"](
-            row["effective_common"], row["effective_scientific"]
-        )
-        == species_key
-    ]
-    if not rows:
+    _zone(tz_name)
+    _register_sql_functions(conn)
+    species_clause = (
+        "e.excluded = 0 AND "
+        "journal_species_key(e.effective_common, e.effective_scientific) = ?"
+    )
+    summary = conn.execute(
+        f"SELECT COUNT(*) AS visits, MIN(e.captured_at) AS first_seen, "
+        f"MAX(e.captured_at) AS last_seen FROM ({EFFECTIVE_SQL}) e "
+        f"WHERE {species_clause}",
+        (species_key,),
+    ).fetchone()
+    if summary["visits"] == 0:
         return None
-    all_species_rows = rows
+
+    newest = conn.execute(
+        f"SELECT * FROM ({EFFECTIVE_SQL}) e WHERE {species_clause} "
+        "ORDER BY e.captured_at DESC, e.id DESC LIMIT 1",
+        (species_key,),
+    ).fetchone()
+    favorite_cover = conn.execute(
+        f"SELECT * FROM ({EFFECTIVE_SQL}) e WHERE {species_clause} "
+        "ORDER BY e.favorite DESC, e.captured_at DESC, e.id DESC LIMIT 1",
+        (species_key,),
+    ).fetchone()
+    hour_rows = conn.execute(
+        f"SELECT journal_local_hour(e.captured_at, ?) AS hour, COUNT(*) AS visits "
+        f"FROM ({EFFECTIVE_SQL}) e WHERE {species_clause} "
+        "GROUP BY hour ORDER BY hour",
+        (tz_name, species_key),
+    ).fetchall()
+
+    page_clauses = [species_clause]
+    page_parameters: list[Any] = [species_key]
     if cursor:
         captured_at, row_id = _decode_cursor(cursor)
-        rows = [
-            row
-            for row in rows
-            if row["captured_at"] < captured_at
-            or (row["captured_at"] == captured_at and row["id"] < row_id)
-        ]
-    page = rows[: bounded + 1]
-    has_more = len(page) > bounded
-    page = page[:bounded]
-    favorite_cover = next(
-        (row for row in all_species_rows if row["favorite"]), all_species_rows[0]
-    )
-    local_hours = Counter()
-    for row in all_species_rows:
-        captured = datetime.fromisoformat(row["captured_at"].replace("Z", "+00:00"))
-        local_hours[captured.astimezone(zone).hour] += 1
-    newest, oldest = all_species_rows[0], all_species_rows[-1]
+        page_clauses.append(
+            "(e.captured_at < ? OR (e.captured_at = ? AND e.id < ?))"
+        )
+        page_parameters.extend((captured_at, captured_at, row_id))
+    page_parameters.append(bounded + 1)
+    rows = conn.execute(
+        f"SELECT * FROM ({EFFECTIVE_SQL}) e "
+        f"WHERE {' AND '.join(page_clauses)} "
+        "ORDER BY e.captured_at DESC, e.id DESC LIMIT ?",
+        page_parameters,
+    ).fetchall()
+    has_more = len(rows) > bounded
+    page = rows[:bounded]
+    busiest_count = max(row["visits"] for row in hour_rows)
     return {
         "species_key": species_key,
         "common_name": newest["effective_common"],
         "scientific": newest["effective_scientific"],
-        "visits": len(all_species_rows),
-        "first_seen": oldest["captured_at"],
-        "last_seen": newest["captured_at"],
+        "visits": summary["visits"],
+        "first_seen": summary["first_seen"],
+        "last_seen": summary["last_seen"],
         "busiest_hours": [
-            hour
-            for hour, count in sorted(local_hours.items())
-            if count == max(local_hours.values())
+            row["hour"] for row in hour_rows if row["visits"] == busiest_count
         ],
         "cover": _serialize_detection(favorite_cover),
         "gallery": [_serialize_detection(row) for row in page],
