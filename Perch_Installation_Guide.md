@@ -1,341 +1,388 @@
 # Perch Installation Guide
+
 ### Setting up your Smart Bird Feeder — no IT background required
 
-This guide walks you through everything, start to finish: buying/setting up the camera, preparing the Raspberry Pi, and getting the dashboard running on your phone. Follow the steps in order and don't skip any — each one sets up something the next step needs.
+This is Perch's single authoritative first-time installation guide. It follows
+the primary and tested setup: a Raspberry Pi 5 running Raspberry Pi OS Lite
+64-bit. No Linux, Docker, Git, or command-line experience is assumed.
 
-Budget about 2 hours the first time. You'll only need to do this once.
+**Primary and tested setup:** Follow the steps in order and do not skip any.
+Each step prepares something the next step needs.
+
+Other 64-bit machines that run Linux Docker containers may work, but those are
+advanced installations and can require different permission, networking, or
+inference dependencies.
+
+Budget about two hours the first time. You only need to complete this setup
+once.
 
 ---
 
-## What you'll need before you start
+## What you need before you start
 
-- **A Raspberry Pi 5** (with power adapter and a microSD card, 32GB or larger)
-- **A Blink camera** already set up outdoors pointed at the feeder
-- **A computer** (Mac or Windows) to prepare the Pi's memory card
-- **Your home WiFi name and password**
-- **About 2 hours**, and patience for one part that involves waiting on an email code
+- **A Raspberry Pi 5** with its power adapter and a microSD card (32 GB or larger)
+- **A Blink camera** already set up outdoors and pointed at the feeder
+- **A computer** (Mac or Windows) for preparing the Pi and connecting to it
+- **Your home Wi-Fi name and password**
+- **About two hours**, including time to wait for an emailed Blink code
 
 ---
 
 ## Part 1: Create a dedicated Blink account
 
-Don't use your personal Blink account for this — use a brand-new one, just for the feeder camera. This avoids login conflicts between your phone and the Pi fighting over the same account.
+Use a new Blink account just for the feeder camera, rather than your personal
+account. This avoids login conflicts between the Blink app and the Pi.
 
-1. Download the Blink app on your phone (if not already installed).
-2. Sign out of your existing account (if any), or use a different phone/browser.
-3. Create a **new** Blink account with a new email address (a free Gmail address works fine — e.g., `yourname.birdfeeder@gmail.com`).
-4. Add your Blink camera to this new account, following Blink's normal setup steps (connect it to your WiFi, name it something simple like "Feeder").
-5. Activate a **paid Blink subscription** for this account. Perch currently pulls
-   from Blink's cloud-media feed. A Sync Module 2 USB drive uses a different
-   local-storage API that Perch does not support yet.
-6. Write down: the Blink login email, the Blink password, and the exact camera name you gave it. You'll need these shortly.
+1. Download the Blink app on your phone if it is not already installed.
+2. Sign out of any existing account, or use a different phone or browser.
+3. Create a new Blink account with a new email address.
+4. Add the feeder camera, connect it to your Wi-Fi, and give it a simple name
+   such as `Feeder`.
+5. Activate a **paid Blink subscription** for this account. Perch reads Blink's
+   cloud-media feed. Sync Module 2 USB storage uses a different API that Perch
+   does not support yet.
+6. Save the Blink email, password, and exact camera name for Part 4.
 
 ---
 
 ## Part 2: Prepare the Raspberry Pi
 
-### 2a. Flash the operating system
+### 2a. Flash Raspberry Pi OS
 
-1. On your computer, download and install **Raspberry Pi Imager** from [raspberrypi.com/software](https://www.raspberrypi.com/software/).
+1. On your computer, install **Raspberry Pi Imager** from
+   [raspberrypi.com/software](https://www.raspberrypi.com/software/).
 2. Insert the microSD card into your computer.
-3. Open Raspberry Pi Imager:
-   - **Device:** choose your Raspberry Pi model
-   - **Operating System:** choose "Raspberry Pi OS Lite (64-bit)" (it's under "Raspberry Pi OS (other)")
-   - **Storage:** choose your microSD card
-4. Click the **gear/settings icon** (or "Edit Settings") before writing. This lets you pre-configure WiFi and remote access so you never need a monitor/keyboard for the Pi:
-   - Set a hostname (e.g., `birdfeeder`)
-   - Enable SSH, and set a username/password you'll remember
-   - Enter your home WiFi name and password
-5. Click **Write**, wait for it to finish, then eject the card and put it in the Raspberry Pi.
-6. Plug in power. Wait 2–3 minutes for it to boot.
+3. In Raspberry Pi Imager choose:
+   - **Device:** Raspberry Pi 5
+   - **Operating System:** Raspberry Pi OS Lite (64-bit), under Raspberry Pi OS
+     (other)
+   - **Storage:** your microSD card
+4. Select **Edit Settings** before writing, then:
+   - Choose a hostname, such as `birdfeeder`.
+   - Enable SSH and choose your own username and password.
+   - Enter your home Wi-Fi name and password.
+5. Select **Write** and wait for Raspberry Pi Imager to report that writing and
+   verification are complete.
+6. Eject the card, insert it into the Pi, connect power, and wait 2–3 minutes.
 
-### 2b. Connect to the Pi remotely
+**Checkpoint:** Raspberry Pi Imager shows that the card was written and
+verified successfully, and the powered Pi has finished its first boot.
 
-You won't plug a monitor into the Pi — you'll control it from your computer's Terminal (Mac) or PowerShell (Windows).
+### 2b. Connect to the Pi
 
-1. Open **Terminal** (Mac) or **PowerShell** (Windows).
-2. Type (replacing `pi` and `birdfeeder` with the username/hostname you set):
-   ```
-   ssh pi@birdfeeder.local
-   ```
-3. Type "yes" if asked to trust the connection, then enter the password you set in Raspberry Pi Imager.
-4. You're now controlling the Pi. Every command below is typed into this same window.
+You control the Pi from Terminal on a Mac or PowerShell on Windows.
+
+Text inside angle brackets is a placeholder. Replace it with your own value;
+do not type the angle brackets themselves. For example, `<username>` is the
+username you chose, `<hostname>` is the hostname you chose, `<pi-ip>` is the
+Pi's numeric address if its hostname does not work, and `<path>` means a path
+specific to your computer. Do not type the angle brackets in any command.
+
+Open Terminal or PowerShell.
+
+**Run on your computer:**
+
+```bash
+ssh <username>@<hostname>.local
+```
+
+Type `yes` if asked to trust the connection, then enter the password you chose
+in Raspberry Pi Imager. If the hostname does not work and you know the Pi's IP
+address, use `ssh <username>@<pi-ip>` instead. Do not assume the username is
+`pi`; Raspberry Pi Imager uses the username you configured.
+
+**Checkpoint:** The prompt changes after login and shows the Pi's hostname. You
+can now type commands on the Raspberry Pi in this same window.
 
 ### 2c. Install Docker
 
+Docker runs Perch's three services. Copy each block into the connected window,
+press Enter, and wait for it to finish.
 
-Docker is the tool that runs Perch's three components for you. Copy-paste this one line, press Enter, and wait (a few minutes):
+**Run on the Raspberry Pi:**
 
-```
+```bash
 curl -fsSL https://get.docker.com | sh
 ```
 
-When it finishes, run these two commands so you don't need to type `sudo` every time:
+Allow your configured user to run Docker, then refresh the group membership.
 
-```
-sudo usermod -aG docker $USER
+**Run on the Raspberry Pi:**
+
+```bash
+sudo usermod -aG docker "$USER"
 newgrp docker
 ```
 
-Confirm it worked:
+Check both Docker components.
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 docker --version
 docker compose version
 ```
 
-You should see version numbers printed for both, with no errors.
+**Checkpoint:** Both version commands print a version number without an error.
 
 ---
 
-## Part 3: Download the Perch project
+## Part 3: Download Perch
 
-Still in the same Terminal window, connected to the Pi:
+Keep using the window connected to the Raspberry Pi.
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 git clone https://github.com/connor-brooks98/Perch.git
 cd Perch
 ```
 
-You're now inside the project folder on the Pi.
-
+**Checkpoint:** The clone finishes without an error and the prompt shows that
+you are inside the `Perch` folder.
 
 ---
 
 ## Part 4: Configure Perch
 
-### 4a. Create your settings file
+### 4a. Create the settings file
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 cp .env.example .env
 chmod 600 .env
 nano .env
 ```
 
-This opens a simple text editor. Fill in:
+In the editor, enter:
 
-- Your dedicated Blink account email and password
-- The exact camera name from Part 1
-- Your timezone (e.g., `America/New_York`)
-- Anything else the file asks for (each line has a short comment explaining it)
+- The dedicated Blink account email and password from Part 1
+- The exact Blink camera name
+- Your timezone, such as `America/New_York`
+- The other requested values described by comments in the file
 
-Leave `PUID=1000` and `PGID=1000` unchanged for the usual first user on a
-Raspberry Pi. If the `id` command reports different `uid` or `gid` numbers, use
-those values instead. Perch uses them to write its data without running the
-containers as root.
+Leave `PUID=1000` and `PGID=1000` unchanged for the usual first Raspberry Pi
+user. If the `id` command reports different `uid` or `gid` numbers, use those
+values instead. Perch uses them to write its data without running containers as
+root.
 
-To save and exit `nano`: press `Ctrl + O`, then `Enter`, then `Ctrl + X`.
+Save with `Ctrl + O`, press Enter, and exit with `Ctrl + X`.
 
-### 4b. Set your dashboard login password
+### 4b. Set the dashboard password
 
-This is the password you'll use to log into the bird dashboard from your phone. Run:
+Replace `your-password` with a password you will remember.
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 docker run --rm caddy:2.11.4-alpine caddy hash-password --plaintext 'your-password'
 ```
 
-Replace `your-password` with a real password you'll remember. This command prints out a scrambled version starting with `$2a$...` — copy that entire output.
+Copy the entire generated hash, which starts with `$2a$`, `$2b$`, or `$2y$`.
+Open the settings file again.
 
-Open the settings file again:
+**Run on the Raspberry Pi:**
 
-```
+```bash
 nano .env
 ```
 
-Find `BASIC_AUTH_HASH=` and paste the full generated hash between the existing
-single quotes. For example:
+Paste the generated value between the existing single quotes after
+`BASIC_AUTH_HASH=`. A valid line looks like
+`BASIC_AUTH_HASH='$2a$14$the-rest-of-the-generated-hash'`. Keep every `$`
+exactly as generated; do not double them. Save and exit the editor.
 
-```
-BASIC_AUTH_HASH='$2a$14$the-rest-of-the-generated-hash'
-```
+**Checkpoint:** `.env` contains your Blink details, exact camera name, timezone,
+and a complete single-quoted bcrypt hash, and `chmod 600 .env` has protected the
+file.
 
-Keep every `$` exactly as generated—do not double them. The single quotes tell
-Docker Compose to treat the hash literally.
+### 4c. Install the bird-identification model
 
-Save and exit (`Ctrl + O`, `Enter`, `Ctrl + X`).
+MobileNetV2 is Perch's stable runtime. ONNX models are experimental and are not
+part of this installation path. Perch's helper downloads the supported model
+and labels, verifies their pinned SHA-256 checksums, and promotes both files
+together as one bundle. An interrupted update therefore cannot pair a new
+model with old labels.
 
-### 4c. Add the bird identification model
+**Run on the Raspberry Pi:**
 
-The camera needs a "brain" to identify bird species — two small files that need to end up in a specific folder on the Pi:
-
-- `model.tflite`
-- `labels.txt`
-
-MobileNetV2 is Perch's stable runtime. ONNX models are still experimental and
-are not supported by these installation steps.
-
-Option A downloads the supported files straight onto the Pi and is the
-recommended path. Options B and C are recovery methods for transferring the
-same pinned MobileNetV2 files on a new installation. Custom models are not
-accepted by the standard preflight because their model/label compatibility has
-not been validated.
-
-**Option A — Download the files directly onto the Pi (easiest — this is the recommended method)**
-
-These files come from Google's Coral model archive. Perch includes a helper that
-downloads them, verifies pinned SHA-256 checksums, and only then installs them:
-
-```
-cd ~/Perch
+```bash
 ./scripts/download-model.sh
 ```
 
-Success ends with `Verified model bundle installed in
-.../classifier/model/current`. The two verified files are promoted together,
-so an interrupted update cannot leave a new model paired with old labels.
+**Checkpoint:** The command ends with `Verified model bundle installed in
+.../classifier/model/current`. The bundle contains both `model.tflite` and
+`labels.txt`.
 
-If you are updating an older Perch installation, rerun
+If you are upgrading an older Perch installation, rerun
 `./scripts/download-model.sh` once even if model files already exist. Older
-versions stored them directly in `classifier/model/`; current versions use the
-transactional bundle at `classifier/model/current/model.tflite` and
+versions stored files directly in `classifier/model/`; current versions use
+`classifier/model/current/model.tflite` and
 `classifier/model/current/labels.txt`.
-
-**Option B — The files are already on your computer, and you're comfortable with Terminal**
-
-If you had to download the files onto your Mac or Windows PC first (rather than getting a direct link), copy them over the network to the Pi using `scp`. Do this from a **new** Terminal/PowerShell window on your **own computer** — not the one still connected to the Pi:
-
-```
-ssh pi@birdfeeder.local "mkdir -p ~/Perch/classifier/model/current"
-scp /path/to/your/model.tflite pi@birdfeeder.local:~/Perch/classifier/model/current/
-scp /path/to/your/labels.txt pi@birdfeeder.local:~/Perch/classifier/model/current/
-```
-
-Replace `/path/to/your/` with wherever the files actually landed (often your `Downloads` folder, e.g. `~/Downloads/model.tflite`), and `pi@birdfeeder.local` with your own Pi username/hostname from Part 2a. It'll ask for your Pi password again — that's normal.
-
-**Option C — You'd rather drag-and-drop with a window, no typing file paths**
-
-If Terminal commands feel error-prone, use a free file-transfer app that gives you a familiar two-pane, drag-and-drop window:
-
-1. Download **Cyberduck** (Mac or Windows) from [cyberduck.io](https://cyberduck.io) or **FileZilla** from [filezilla-project.org](https://filezilla-project.org).
-2. Open it and choose to connect via **SFTP**.
-3. Server: `birdfeeder.local` (or your Pi's IP address) — Username/Password: whatever you set in Part 2a.
-4. Once connected, you'll see your Pi's folders on one side. Navigate to
-   `Perch/classifier/model/`, create a folder named `current` if it does not
-   exist, then open `current`.
-5. Drag `model.tflite` and `labels.txt` from your computer's folder on the other side directly into that window.
-
-**Double-check it worked**
-
-Back in your Terminal window connected to the Pi, run:
-
-```
-ls -lh ~/Perch/classifier/model/current/
-```
-
-You should see both `model.tflite` and `labels.txt` listed with a file size next to each (not `0`). If either is missing or shows `0` bytes, redo that file's transfer before moving on — Perch won't start correctly without both.
 
 ---
 
-## Part 5: Connect Perch to your Blink camera (one-time)
+## Part 5: Authenticate with Blink
 
-This step logs the Pi into your Blink account and requires a code emailed to you.
+This one-time step signs the Pi into the dedicated Blink account. Blink will
+email a verification code.
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 docker compose build puller
 docker compose run --rm puller python auth_setup.py
 ```
 
-- Blink will email a verification code to the account's inbox — check that email and type the code in when prompted.
-- Once accepted, it will print your camera's name(s). Double-check the name matches what you put in `.env` under `CAMERA_NAME` (if it doesn't match exactly, go back into `nano .env` and fix it).
+Enter the emailed code when prompted. The command then prints the camera names
+available to the account. If the intended name does not exactly match
+`CAMERA_NAME` in `.env`, reopen `.env`, correct it, save, and exit.
+
+**Checkpoint:** Authentication is accepted and the command prints the feeder
+camera name exactly as it appears in `CAMERA_NAME`.
 
 ---
 
----
+## Part 6: Verify and launch Perch
 
-## Part 6: Launch everything
+### 6a. Run the complete preflight
 
-First run the complete preflight. It validates settings, Compose, model
-checksums, and builds all images:
+The preflight checks settings, file permissions, Compose configuration, model
+checksums, container privileges, data-directory access, and real model
+inference. It also builds the container images.
 
-```
+**Run on the Raspberry Pi:**
+
+```bash
 ./scripts/verify-install.sh --build
 ```
 
-Only continue if it ends with `Container images built successfully.` Then run:
+**Checkpoint:** Continue only when the final line is `Container privilege, data-directory, and model inference checks passed.` A prior `Container images
+built successfully.` line is not the final checkpoint.
 
-```
+### 6b. Start the services
+
+**Run on the Raspberry Pi:**
+
+```bash
 docker compose up -d
 ```
 
-This builds and starts all three parts of Perch (camera puller, bird-ID classifier, and the dashboard website). The first run takes a few minutes.
+The camera puller, bird classifier, and dashboard now run in the background.
+The first start can take a few minutes.
 
-Watch it working (optional, press `Ctrl + C` to stop watching — this does **not** stop the program):
+**Checkpoint:** The command returns without an error and lists the Perch
+services as started.
 
-```
+To watch activity, use the following command. Press `Ctrl + C` to stop watching;
+this does not stop Perch.
+
+**Run on the Raspberry Pi:**
+
+```bash
 docker compose logs -f
 ```
 
 ---
 
-## Part 7: View your dashboard
+## Part 7: Open the dashboard
 
-1. On any device connected to your home WiFi, open a web browser.
-2. Go to: `http://birdfeeder.local:8080` (replace `birdfeeder` with whatever hostname you chose in Part 2a). If that doesn't load, use the Pi's IP address instead, e.g. `http://192.168.1.50:8080`.
-3. Log in with the password you set in Part 4b (the username is whatever you configured in `.env`, often just any value).
-4. You should see the dashboard, and detections will start appearing as birds visit the feeder.
+1. On a device connected to your home Wi-Fi, open a web browser.
+2. Visit `http://<hostname>.local:8080`. If that does not load, visit
+   `http://<pi-ip>:8080` instead.
+3. Log in with the dashboard username from `.env` and the password whose hash
+   you created in Part 4.
 
----
-
-## Part 8: View it from your phone, from anywhere (optional)
-
-By default the dashboard only works at home, on your WiFi. To check it from anywhere:
-
-1. Install **Tailscale** on the Pi:
-   ```
-   curl -fsSL https://tailscale.com/install.sh | sh
-   sudo tailscale up
-   ```
-   Follow the link it gives you to sign in (a free personal account is fine).
-2. Turn on remote access:
-   ```
-   sudo tailscale funnel 8080
-   ```
-3. Install the **Tailscale app** on your phone and sign into the same account.
-4. On your phone, open the `https://....ts.net` web address Tailscale gives you, log in with your dashboard password, then use your phone's "Add to Home Screen" option so it opens like a normal app icon.
+**Checkpoint:** The Perch dashboard opens and accepts your login. It may be
+empty at first. A detection appears only after a new clip is recorded by the
+subscribed Blink camera, uploaded to Blink cloud storage, and processed by
+Perch.
 
 ---
 
-## Everyday use — what you need to know
+## Part 8: Optional remote phone access
 
-- **You don't need to do anything day-to-day.** The Pi keeps running and restarts itself automatically, even after a power outage.
-- **If Part 5's login step fails** with something like `Login endpoint failed` or `Cannot setup Blink platform`: this means Blink itself rejected the login, not a problem with your Pi. Open the Blink app and confirm the same email/password logs in there directly — that catches typos or an unverified new account immediately. If you've retried the command several times in a row, wait 15–20 minutes first; Blink temporarily rate-limits repeated login attempts from the same account.
-- **If Compose reports part of the password hash as an unset variable**, make sure
-  the entire generated hash is between single quotes as shown in Part 4b.
-- **If you ever need to restart something**, reconnect with `ssh pi@birdfeeder.local`, go to the folder (`cd Perch`), and run:
-  ```
-  docker compose restart
-  ```
-- **If the Blink login stops working after a while** (rare, but happens if a session expires), reconnect and run:
-  ```
-  docker compose run --rm puller python auth_setup.py
-  ```
-  and re-enter the emailed code, same as Part 5.
-- **If one video cannot be decoded**, Perch retries it automatically. The
-  defaults are `MAX_CLIP_ATTEMPTS=3` and `CLIP_RETRY_DELAY=60`, which means the
-  first two failures wait 60 and 120 seconds. A third failure is saved with
-  `status = 'error'` so it cannot block newer clips.
-- **To retry failed videos after correcting the cause**, stop the classifier,
-  reset those rows, and start it again:
-  ```
-  docker compose stop classifier
-  sqlite3 data/db/feeder.sqlite "UPDATE clips SET status = 'pending', attempt_count = 0, next_attempt_at = NULL, processing_started_at = NULL, note = 'manually requeued' WHERE status = 'error';"
-  docker compose start classifier
-  ```
+By default, the dashboard works only on your home Wi-Fi. Tailscale can provide
+remote access.
+
+Install Tailscale and follow the sign-in link it prints.
+
+**Run on the Raspberry Pi:**
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Enable access to the dashboard.
+
+**Run on the Raspberry Pi:**
+
+```bash
+sudo tailscale funnel 8080
+```
+
+Install the Tailscale app on your phone, sign into the same account, and open
+the `https://....ts.net` address that Tailscale provides.
 
 ---
 
-## Quick reference: all commands used
+## Everyday use and troubleshooting
+
+- **Normal operation:** The Pi keeps Perch running and restarts the services
+  after a power outage.
+- **Blink login failure:** If authentication reports `Login endpoint failed`
+  or `Cannot setup Blink platform`, confirm the same email and password in the
+  Blink app. After several attempts, wait 15–20 minutes because Blink can
+  temporarily limit repeated logins.
+- **Unset hash variable:** Make sure the full bcrypt hash in `.env` is enclosed
+  in single quotes exactly as shown in Part 4.
+- **Video retries:** Perch defaults to `MAX_CLIP_ATTEMPTS=3` and
+  `CLIP_RETRY_DELAY=60`. The first two failures wait 60 and 120 seconds. A third
+  failure is stored with `status = 'error'` so it cannot block newer clips.
+
+To restart all services, reconnect to the Pi, enter the Perch folder, and run:
+
+**Run on the Raspberry Pi:**
+
+```bash
+docker compose restart
+```
+
+If the Blink session expires, authenticate again:
+
+**Run on the Raspberry Pi:**
+
+```bash
+docker compose run --rm puller python auth_setup.py
+```
+
+To retry failed videos after correcting their cause, stop the classifier,
+reset the failed rows, and start it again:
+
+**Run on the Raspberry Pi:**
+
+```bash
+docker compose stop classifier
+sqlite3 data/db/feeder.sqlite "UPDATE clips SET status = 'pending', attempt_count = 0, next_attempt_at = NULL, processing_started_at = NULL, note = 'manually requeued' WHERE status = 'error';"
+docker compose start classifier
+```
+
+---
+
+## Quick reference
 
 | What | Command |
 |---|---|
-| Connect to the Pi | `ssh pi@birdfeeder.local` |
-| Go to the project folder | `cd Perch` |
+| Connect from your computer | `ssh <username>@<hostname>.local` |
+| Enter the project folder | `cd Perch` |
 | Edit settings | `nano .env` |
-| Start everything | `docker compose up -d --build` |
+| Verify installation | `./scripts/verify-install.sh --build` |
+| Start everything | `docker compose up -d` |
 | Watch activity | `docker compose logs -f` |
 | Restart everything | `docker compose restart` |
-| Re-login to Blink | `docker compose run --rm puller python auth_setup.py` |
+| Re-authenticate with Blink | `docker compose run --rm puller python auth_setup.py` |
 
----
-
-*If you get stuck on any single step, note the exact command you ran and the exact error message shown — that's all that's needed to troubleshoot it.*
+If you get stuck, record the exact command you ran and the exact error message.
+Those two details are enough to begin troubleshooting.

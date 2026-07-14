@@ -19,6 +19,24 @@ def read(relative_path: str) -> str:
 
 
 class InstallationContractTests(unittest.TestCase):
+    def test_beginner_guide_is_linear_and_has_success_checkpoints(self) -> None:
+        guide = read("Perch_Installation_Guide.md")
+        self.assertIn("single authoritative", guide)
+        self.assertIn("Primary and tested setup", guide)
+        self.assertIn("Checkpoint:", guide)
+        self.assertIn(
+            "Container privilege, data-directory, and model inference checks passed.",
+            guide,
+        )
+        self.assertNotIn("Option B", guide)
+        self.assertNotIn("Option C", guide)
+
+    def test_beginner_guide_explains_command_locations_and_placeholders(self) -> None:
+        guide = read("Perch_Installation_Guide.md")
+        self.assertIn("Run on your computer", guide)
+        self.assertIn("Run on the Raspberry Pi", guide)
+        self.assertIn("Do not type the angle brackets", guide)
+
     def test_readme_routes_first_time_installers_to_the_authoritative_guide(self) -> None:
         readme = read("README.md")
         guide = read("Perch_Installation_Guide.md")
