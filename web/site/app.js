@@ -129,8 +129,15 @@ async function loadSpecies(version, key) {
     renderSpecies(view, {...data, enrichment: data.enrichment || {status: "missing"}}, {
       ...visitActions,
       pendingRefreshKey: version,
-      onRefresh: () => {
-        if (version === renderVersion) loadSpecies(version, key);
+      onRefresh: async () => {
+        if (version !== renderVersion) return null;
+        try {
+          const refreshed = await getSpeciesDetail(key);
+          if (version !== renderVersion) return null;
+          return refreshed.enrichment || {status: "missing"};
+        } catch (_error) {
+          return version === renderVersion ? {status: "failed"} : null;
+        }
       },
       onLoadMore: async (cursor, grid, button) => {
         button.disabled = true;

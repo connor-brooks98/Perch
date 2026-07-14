@@ -317,7 +317,7 @@ class WebContractTests(unittest.TestCase):
         self.assertIn('"About this bird"', species)
         self.assertIn("introduction.textContent = enrichment.introduction", species)
         self.assertIn('link.rel = "noopener noreferrer"', species)
-        self.assertIn('image.src.startsWith("/enrichment/")', species)
+        self.assertIn('^\\/enrichment\\/[0-9a-f]{24}-[0-9a-f]{32}\\.jpg$', species)
         for field in ("image.creator", "image.license", "image.source"):
             self.assertIn(field, species)
         self.assertLess(species.index("data.cover"), species.index("intro.append(enrichmentSlot"))
@@ -333,6 +333,8 @@ class WebContractTests(unittest.TestCase):
         self.assertIn('removeEventListener("hashchange"', species)
         self.assertIn("pendingRefreshKey", app)
         self.assertIn("onRefresh", app)
+        self.assertIn("return refreshed.enrichment", app)
+        self.assertIn("await actions.onRefresh", species)
         self.assertIn(".reference-image", styles)
 
     def test_visit_correction_contract(self):
