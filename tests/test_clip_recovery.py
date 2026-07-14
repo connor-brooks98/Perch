@@ -12,12 +12,27 @@ class ClipRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temporary.name) / "feeder.sqlite"
+        self.connections: list[sqlite3.Connection] = []
 
     def tearDown(self) -> None:
+        for conn in reversed(self.connections):
+            conn.close()
+        self.connections.clear()
         self.temporary.cleanup()
 
-    def connect(self):
-        return db.connect(self.db_path)
+    def connect(self) -> sqlite3.Connection:
+        conn = db.connect(self.db_path)
+        self.connections.append(conn)
+        return conn
+
+    def test_teardown_closes_connections_created_by_helper(self) -> None:
+        case = self.__class__("test_connect_migrates_legacy_clips_table")
+        case.setUp()
+        conn = case.connect()
+        case.tearDown()
+
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
 
     def add_clip(self, conn, filename: str = "clip.mp4") -> int:
         return db.add_clip(conn, filename, "feeder", "2026-07-13T12:00:00Z")

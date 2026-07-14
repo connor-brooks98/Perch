@@ -128,6 +128,10 @@ work to the queue; ordinary failures retry with backoff before becoming terminal
 `error` rows. Inspect and manually requeue terminal errors after correcting the
 underlying cause:
 
+These database inspection and recovery commands use the SQLite command-line
+utility installed by the primary Raspberry Pi guide. Advanced hosts must
+install their operating system's equivalent `sqlite3` package.
+
 ```bash
 sqlite3 data/db/feeder.sqlite "SELECT filename, attempt_count, note FROM clips WHERE status = 'error';"
 docker compose stop classifier

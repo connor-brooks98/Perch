@@ -19,7 +19,27 @@ def read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def bash_block_labels(document: str) -> list[str]:
+    lines = document.splitlines()
+    labels: list[str] = []
+    for index, line in enumerate(lines):
+        if line.strip() != "```bash":
+            continue
+        prior = index - 1
+        while prior >= 0 and not lines[prior].strip():
+            prior -= 1
+        labels.append(lines[prior].strip() if prior >= 0 else "")
+    return labels
+
+
 class InstallationContractTests(unittest.TestCase):
+    def test_primary_pi_guide_installs_and_verifies_sqlite_cli(self) -> None:
+        guide = read("Perch_Installation_Guide.md")
+        documents = "\n".join([read("README.md"), guide])
+        self.assertIn("sudo apt-get install -y sqlite3", guide)
+        self.assertIn("sqlite3 --version", guide)
+        self.assertIn("SQLite command-line utility", documents)
+
     def test_primary_docs_have_no_broken_local_markdown_links(self) -> None:
         for relative_path in ("README.md", "Perch_Installation_Guide.md"):
             document = read(relative_path)
@@ -36,11 +56,6 @@ class InstallationContractTests(unittest.TestCase):
         guide = read("Perch_Installation_Guide.md")
         self.assertIn("single authoritative", guide)
         self.assertIn("Primary and tested setup", guide)
-        self.assertIn("Checkpoint:", guide)
-        self.assertIn(
-            "Container privilege, data-directory, and model inference checks passed.",
-            guide,
-        )
         self.assertNotIn("Option B", guide)
         self.assertNotIn("Option C", guide)
 
@@ -49,6 +64,30 @@ class InstallationContractTests(unittest.TestCase):
         self.assertIn("Run on your computer", guide)
         self.assertIn("Run on the Raspberry Pi", guide)
         self.assertIn("Do not type the angle brackets", guide)
+
+    def test_every_beginner_guide_command_block_has_a_location_label(self) -> None:
+        guide = read("Perch_Installation_Guide.md")
+        allowed = {"**Run on your computer:**", "**Run on the Raspberry Pi:**"}
+        labels = bash_block_labels(guide)
+        self.assertTrue(labels)
+        self.assertTrue(all(label in allowed for label in labels), labels)
+
+    def test_beginner_guide_has_each_required_checkpoint(self) -> None:
+        guide = read("Perch_Installation_Guide.md")
+        required = {
+            "Raspberry Pi Imager shows",
+            "prompt changes after login",
+            "Docker, Compose, and SQLite",
+            "clone finishes without an error",
+            "`.env` contains your Blink details",
+            "Verified model bundle installed",
+            "Authentication is accepted",
+            "Container privilege, data-directory, and model inference checks passed.",
+            "Perch services as started",
+            "Perch dashboard opens",
+        }
+        for phrase in required:
+            self.assertIn(phrase, guide, phrase)
 
     def test_readme_routes_first_time_installers_to_the_authoritative_guide(self) -> None:
         readme = read("README.md")

@@ -96,7 +96,7 @@ address, use `ssh <username>@<pi-ip>` instead. Do not assume the username is
 **Checkpoint:** The prompt changes after login and shows the Pi's hostname. You
 can now type commands on the Raspberry Pi in this same window.
 
-### 2c. Install Docker
+### 2c. Install Docker and SQLite
 
 Docker runs Perch's three services. Copy each block into the connected window,
 press Enter, and wait for it to finish.
@@ -105,6 +105,16 @@ press Enter, and wait for it to finish.
 
 ```bash
 curl -fsSL https://get.docker.com | sh
+```
+
+Install the SQLite command-line utility used by Perch's database inspection
+and manual-requeue commands.
+
+**Run on the Raspberry Pi:**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y sqlite3
 ```
 
 Allow your configured user to run Docker, then refresh the group membership.
@@ -116,16 +126,18 @@ sudo usermod -aG docker "$USER"
 newgrp docker
 ```
 
-Check both Docker components.
+Check Docker, Compose, and SQLite.
 
 **Run on the Raspberry Pi:**
 
 ```bash
 docker --version
 docker compose version
+sqlite3 --version
 ```
 
-**Checkpoint:** Both version commands print a version number without an error.
+**Checkpoint:** Docker, Compose, and SQLite each print a version number without
+an error.
 
 ---
 
@@ -275,8 +287,8 @@ docker compose up -d
 The camera puller, bird classifier, and dashboard now run in the background.
 The first start can take a few minutes.
 
-**Checkpoint:** The command returns without an error and lists the Perch
-services as started.
+**Checkpoint:** Docker Compose lists the Perch services as started and returns
+without an error.
 
 To watch activity, use the following command. Press `Ctrl + C` to stop watching;
 this does not stop Perch.

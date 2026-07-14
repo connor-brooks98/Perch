@@ -30,7 +30,7 @@
 - Consumes: existing recovery commands that invoke `sqlite3 data/db/feeder.sqlite`.
 - Produces: a tested primary-host installation and verification path for the CLI.
 
-- [ ] **Step 1: Add the failing documentation contract**
+- [x] **Step 1: Add the failing documentation contract**
 
 Add to `InstallationContractTests`:
 
@@ -43,7 +43,7 @@ def test_primary_pi_guide_installs_and_verifies_sqlite_cli(self) -> None:
     self.assertIn("SQLite command-line utility", documents)
 ```
 
-- [ ] **Step 2: Run the contract and observe the intended failure**
+- [x] **Step 2: Run the contract and observe the intended failure**
 
 Run:
 
@@ -53,7 +53,7 @@ python3 -m unittest tests.test_installation.InstallationContractTests.test_prima
 
 Expected: FAIL because the guide uses `sqlite3` without installing or verifying it.
 
-- [ ] **Step 3: Add the primary-host install and checkpoint**
+- [x] **Step 3: Add the primary-host install and checkpoint**
 
 In Part 2c of `Perch_Installation_Guide.md`, after installing Docker, add a separately labeled Pi command block:
 
@@ -72,7 +72,7 @@ sqlite3 --version
 
 Change the checkpoint to require version output from Docker, Compose, and SQLite. Explain that the SQLite command-line utility supports the inspection and manual-requeue commands later in the guide.
 
-- [ ] **Step 4: Clarify the README dependency boundary**
+- [x] **Step 4: Clarify the README dependency boundary**
 
 Before the first `sqlite3` recovery command in `README.md`, state:
 
@@ -82,7 +82,7 @@ utility installed by the primary Raspberry Pi guide. Advanced hosts must
 install their operating system's equivalent `sqlite3` package.
 ```
 
-- [ ] **Step 5: Run the focused and documentation suites**
+- [x] **Step 5: Run the focused and documentation suites**
 
 Run:
 
@@ -105,7 +105,7 @@ Expected: PASS with zero failures.
 - Consumes: the finished beginner guide and its exact command-location labels.
 - Produces: structural contracts for command blocks and ten named checkpoints.
 
-- [ ] **Step 1: Add a fenced-block parser helper**
+- [x] **Step 1: Add a fenced-block parser helper**
 
 Add above `InstallationContractTests`:
 
@@ -123,7 +123,7 @@ def bash_block_labels(document: str) -> list[str]:
     return labels
 ```
 
-- [ ] **Step 2: Replace substring-only structure tests**
+- [x] **Step 2: Replace substring-only structure tests**
 
 Keep the existing scope and placeholder assertions, but replace the weak label/checkpoint assertions with:
 
@@ -153,7 +153,7 @@ def test_beginner_guide_has_each_required_checkpoint(self) -> None:
         self.assertIn(phrase, guide, phrase)
 ```
 
-- [ ] **Step 3: Prove the structural tests detect regressions**
+- [x] **Step 3: Prove the structural tests detect regressions**
 
 Using `apply_patch`, temporarily remove the `**Run on the Raspberry Pi:**` line immediately before `./scripts/download-model.sh` and change `Verified model bundle installed` to `Model installed`. Run:
 
@@ -165,7 +165,7 @@ python3 -m unittest \
 
 Expected: two failures, one identifying a missing command label and one identifying the model checkpoint. Restore both exact documentation lines with `apply_patch`.
 
-- [ ] **Step 4: Run the restored structural contracts**
+- [x] **Step 4: Run the restored structural contracts**
 
 Run the two-test command from Step 3.
 
@@ -182,7 +182,7 @@ Expected: PASS.
 - Consumes: `db.connect(path) -> sqlite3.Connection`.
 - Produces: `ClipRecoveryTests.connect()` connections owned and closed by each test case.
 
-- [ ] **Step 1: Add the failing cleanup test**
+- [x] **Step 1: Add the failing cleanup test**
 
 Add:
 
@@ -197,7 +197,7 @@ def test_teardown_closes_connections_created_by_helper(self) -> None:
         conn.execute("SELECT 1")
 ```
 
-- [ ] **Step 2: Run it and observe the intended failure**
+- [x] **Step 2: Run it and observe the intended failure**
 
 Run:
 
@@ -207,7 +207,7 @@ python3 -m unittest tests.test_clip_recovery.ClipRecoveryTests.test_teardown_clo
 
 Expected: FAIL because `tearDown()` currently cleans the temporary directory without closing `conn`.
 
-- [ ] **Step 3: Register and close connections**
+- [x] **Step 3: Register and close connections**
 
 Implement:
 
@@ -231,7 +231,7 @@ def connect(self) -> sqlite3.Connection:
 
 Keep the legacy connection's explicit `legacy.close()`.
 
-- [ ] **Step 4: Run cleanup and warning-strict tests**
+- [x] **Step 4: Run cleanup and warning-strict tests**
 
 Run:
 
@@ -254,7 +254,7 @@ Expected: both commands pass with no `ResourceWarning` output.
 - Consumes: Tasks 1–3 and the existing verified container stack.
 - Produces: reviewed commits pushed normally from `production-hardening`.
 
-- [ ] **Step 1: Run the complete unit suite**
+- [x] **Step 1: Run the complete unit suite**
 
 Run:
 
@@ -264,13 +264,13 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 
 Expected: all tests pass with no failures, errors, or SQLite `ResourceWarning`s.
 
-- [ ] **Step 2: Run static and Compose checks**
+- [x] **Step 2: Run static and Compose checks**
 
 Run Python compilation with `PYTHONPYCACHEPREFIX` directed to `/tmp`, run `bash -n scripts/*.sh`, render base and Cloudflare Compose with non-secret environment values, and run `git diff --check`.
 
 Expected: every command exits `0`.
 
-- [ ] **Step 3: Run the complete Docker preflight**
+- [x] **Step 3: Run the complete Docker preflight**
 
 Use the existing ignored verified model bundle and a temporary non-secret `.env` if no private `.env` exists. Run:
 
@@ -286,7 +286,7 @@ Container privilege, data-directory, and model inference checks passed.
 
 Remove a temporary `.env` afterward and confirm no test containers remain.
 
-- [ ] **Step 4: Review and commit**
+- [x] **Step 4: Review and commit**
 
 Review `git diff`, `git diff --check`, and `git status --short`. Commit only the intended follow-up files and completed plan:
 
@@ -295,13 +295,13 @@ git add README.md Perch_Installation_Guide.md tests/test_installation.py tests/t
 git commit -m "docs: close final installation follow-ups"
 ```
 
-- [ ] **Step 5: Verify the committed state**
+- [x] **Step 5: Verify the committed state**
 
 Run the complete unit suite again and confirm `git status --short` is empty.
 
 Expected: all tests pass and the worktree is clean.
 
-- [ ] **Step 6: Push normally**
+- [x] **Step 6: Push normally**
 
 Inspect `git remote -v`, the current branch, and upstream. Fetch the remote and confirm the push is a normal fast-forward; do not rebase or rewrite history automatically. Then run:
 
