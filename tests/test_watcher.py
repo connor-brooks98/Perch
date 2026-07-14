@@ -113,6 +113,26 @@ class WatcherRecoveryTests(unittest.TestCase):
             self.assertLessEqual(small.width, 480)
         self.assertEqual(list(self.root.rglob("*.tmp")), [])
 
+    def test_atomic_jpeg_save_failure_cleans_partial_and_preserves_existing(self) -> None:
+        target = self.root / "images" / "42.jpg"
+        target.parent.mkdir()
+        target.write_bytes(b"existing-jpeg")
+
+        def partial_save(_image, path, *_args, **_kwargs):
+            Path(path).write_bytes(b"partial-jpeg")
+            raise OSError("disk full")
+
+        with mock.patch.object(
+            Image.Image, "save", autospec=True, side_effect=partial_save
+        ):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                watcher._atomic_jpeg(
+                    Image.new("RGB", (20, 10)), target, max_width=480, quality=82
+                )
+
+        self.assertEqual(target.read_bytes(), b"existing-jpeg")
+        self.assertFalse(target.with_suffix(".jpg.tmp").exists())
+
     def test_regenerate_json_does_not_delete_old_images(self) -> None:
         old = self.root / "thumbs" / "old.jpg"
         old.parent.mkdir()

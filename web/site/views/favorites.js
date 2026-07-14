@@ -7,6 +7,10 @@ function element(tag, className, text) {
   return node;
 }
 
+function emptyAlbum() {
+  return element("p", "empty-postcard", "Favorite visits will gather here.");
+}
+
 export function renderFavorites(outlet, data, actions = {}) {
   const page = element("div", "collection-page");
   page.append(element("p", "section-kicker", "The family album"));
@@ -14,10 +18,8 @@ export function renderFavorites(outlet, data, actions = {}) {
   const grid = element("div", "visit-grid");
   grid.dataset.favoritesGrid = "true";
   appendFavorites(grid, data.detections || [], actions);
-  page.append(grid);
-  if (!(data.detections || []).length) {
-    page.append(element("p", "empty-postcard", "Favorite visits will gather here."));
-  }
+  if ((data.detections || []).length) page.append(grid);
+  else page.append(emptyAlbum());
   if (data.next_cursor) {
     const loadMore = element("button", "secondary-button", "Load older favorites");
     loadMore.type = "button";
@@ -36,7 +38,14 @@ export function appendFavorites(grid, detections, actions = {}) {
       ...actions,
       onToggleFavorite: async (visit, favorite) => {
         const saved = await (actions.onToggleFavorite?.(visit, favorite) ?? Promise.resolve({...visit, favorite}));
-        if (saved?.favorite === false) card.remove();
+        if (saved?.favorite === false) {
+          card.remove();
+          const page = grid.parentNode;
+          if (page && grid.children.length === 0 && !page.querySelector("[data-load-more]")) {
+            grid.remove();
+            page.append(emptyAlbum());
+          }
+        }
         return saved;
       },
     });

@@ -97,6 +97,7 @@ class JournalSchemaTests(unittest.TestCase):
         with mock.patch("pathlib.Path.read_text", side_effect=AssertionError("schema rerun")):
             conn = self.connect(path)
             self.assertEqual(conn.execute("SELECT 1").fetchone()[0], 1)
+            self.assertEqual(conn.execute("PRAGMA synchronous").fetchone()[0], 1)
 
     def test_initialization_failure_closes_its_connection(self) -> None:
         path = self.root / "broken.sqlite"

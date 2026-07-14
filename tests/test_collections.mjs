@@ -116,6 +116,22 @@ test("Favorites paginates and removes only successfully unfavorited cards", asyn
   assert.deepEqual(calls, [[21, false], [22, false]]);
 });
 
+test("Favorites shows the empty album after its last confirmed removal", async () => {
+  const {view} = installDom();
+  const {renderFavorites} = await import("../web/site/views/favorites.js");
+  renderFavorites(view, {
+    detections: [detection({id: 1, favorite: true})],
+    next_cursor: null,
+  }, {
+    onToggleFavorite: async (visit, favorite) => ({...visit, favorite}),
+  });
+
+  await view.querySelector(".favorite-button").dispatch("click");
+
+  assert.equal(view.querySelector(".visit-grid"), null);
+  assert.match(view.querySelector(".empty-postcard").textContent, /Favorite visits/);
+});
+
 test("My Birds renders server new state and encoded profile links", async () => {
   const {view} = installDom();
   const {renderBirds} = await import("../web/site/views/birds.js");

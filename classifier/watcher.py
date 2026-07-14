@@ -91,8 +91,12 @@ def _atomic_jpeg(source: Image.Image, target: Path, max_width: int, quality: int
         height = round(image.height * max_width / image.width)
         image = image.resize((max_width, height), Image.Resampling.LANCZOS)
     temporary = target.with_suffix(target.suffix + ".tmp")
-    image.save(temporary, "JPEG", quality=quality, optimize=True)
-    temporary.replace(target)
+    try:
+        image.save(temporary, "JPEG", quality=quality, optimize=True)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+        image.close()
 
 
 def publish_detection_images(frame: Path, clip_id: int) -> tuple[str, str]:

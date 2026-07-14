@@ -28,6 +28,7 @@ def _open(db_path: str | Path, *, timeout_seconds: float) -> sqlite3.Connection:
     try:
         conn.row_factory = sqlite3.Row
         conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
+        conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
     except BaseException:
