@@ -13,8 +13,11 @@ CREATE TABLE IF NOT EXISTS clips (
     camera       TEXT,
     captured_at  TEXT    NOT NULL,          -- ISO8601, when Blink recorded it
     pulled_at    TEXT    NOT NULL,          -- ISO8601, when we downloaded it
-    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending | done | error | skipped
-    note         TEXT                        -- error text or reason skipped
+    status       TEXT    NOT NULL DEFAULT 'pending',  -- pending | processing | done | error | skipped
+    note         TEXT,                       -- error text or reason skipped
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,                    -- ISO8601; NULL means ready now
+    processing_started_at TEXT               -- ISO8601; set only while claimed
 );
 
 CREATE INDEX IF NOT EXISTS idx_clips_status ON clips(status);

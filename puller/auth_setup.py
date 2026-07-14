@@ -38,7 +38,20 @@ async def main() -> int:
             no_prompt=True,
             session=session,
         )
-        await blink.start()
+        started = await blink.start()
+        if not started:
+            print(
+                "\nBlink rejected the login (see 'Login endpoint failed' / "
+                "'Cannot setup Blink platform' above). This is almost always one of:\n"
+                "  - BLINK_USERNAME / BLINK_PASSWORD in .env don't match a real Blink login\n"
+                "  - This account hasn't verified its email yet (check the Blink welcome email)\n"
+                "  - Blink is temporarily rate-limiting this account/IP after repeated attempts\n"
+                "    (wait 15-20 minutes, then try again)\n"
+                "Confirm the same email/password logs in from the Blink app itself, fix "
+                ".env if needed, then re-run this command.",
+                file=sys.stderr,
+            )
+            return 1
 
         if blink.auth.check_key_required():
             code = input("Enter the 2FA code Blink just emailed you: ").strip()

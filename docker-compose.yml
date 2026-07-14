@@ -11,26 +11,76 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-security: &default-security
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 200
+
 services:
   puller:
+    <<: *default-security
     build:
       context: .
       dockerfile: puller/Dockerfile
-    env_file: .env
+    environment:
+      BLINK_USERNAME: ${BLINK_USERNAME:?Set BLINK_USERNAME in .env}
+      BLINK_PASSWORD: ${BLINK_PASSWORD:?Set BLINK_PASSWORD in .env}
+      CAMERA_NAME: ${CAMERA_NAME:-all}
+      POLL_INTERVAL: ${POLL_INTERVAL:-300}
+      RETAIN_DAYS: ${RETAIN_DAYS:-14}
+      HEARTBEAT_EVERY: ${HEARTBEAT_EVERY:-12}
+      DB_PATH: /data/db/feeder.sqlite
+      CLIPS_DIR: /data/clips
+      BLINK_CREDS: /data/blink/creds.json
+      NTFY_URL: ${NTFY_URL:-}
+      TZ: ${TZ:-America/New_York}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
-      - ./data:/data
+      - ./data/blink:/data/blink
+      - ./data/clips:/data/clips
+      - ./data/db:/data/db
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    networks:
+      - puller-egress
     restart: unless-stopped
     init: true
     logging: *default-logging
 
   classifier:
+    <<: *default-security
     build:
       context: .
       dockerfile: classifier/Dockerfile
-    env_file: .env
+    environment:
+      WATCH_INTERVAL: ${WATCH_INTERVAL:-20}
+      FRAMES_PER_CLIP: ${FRAMES_PER_CLIP:-4}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.30}
+      THUMB_WIDTH: ${THUMB_WIDTH:-480}
+      MAX_CLIP_ATTEMPTS: ${MAX_CLIP_ATTEMPTS:-3}
+      CLIP_RETRY_DELAY: ${CLIP_RETRY_DELAY:-60}
+      DB_PATH: /data/db/feeder.sqlite
+      CLIPS_DIR: /data/clips
+      WEB_DIR: /data/web
+      MODEL_PATH: /app/model/current/model.tflite
+      LABELS_PATH: /app/model/current/labels.txt
+      NTFY_URL: ${NTFY_URL:-}
+      TZ: ${TZ:-America/New_York}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
-      - ./data:/data
-      - ./classifier/model:/app/model:ro   # drop model.tflite + labels.txt here
+      - ./data/clips:/data/clips:ro
+      - ./data/db:/data/db
+      - ./data/web:/data/web
+      - ./classifier/model:/app/model:ro   # transactional current model bundle
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    networks:
+      - classifier-egress
     restart: unless-stopped
     init: true
     logging: *default-logging
@@ -38,19 +88,34 @@ services:
       - puller
 
   web:
+    <<: *default-security
     build:
       context: .
       dockerfile: web/Dockerfile
-    env_file: .env
+    environment:
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-birdwatcher}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?Set BASIC_AUTH_HASH in .env}
+    user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
-      - ./data:/data
+      - ./data/web:/data/web:ro
+    tmpfs:
+      - /data:rw,noexec,nosuid,nodev,size=16m,uid=${PUID:-1000},gid=${PGID:-1000},mode=0700
+      - /config:rw,noexec,nosuid,nodev,size=4m,uid=${PUID:-1000},gid=${PGID:-1000},mode=0700
+    networks:
+      - web-edge
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     restart: unless-stopped
     init: true
     logging: *default-logging
     depends_on:
       - classifier
 
-# Persistent state (creds, DB, clips, generated dashboard data) lives under
-# ./data on the host — bind-mounted so it's trivial to back up. See scripts/.
+# Persistent state remains under ./data, but each service receives only the
+# subdirectories it needs. In particular, the web container cannot read Blink
+# credentials or raw clips.
+
+networks:
+  puller-egress:
+  classifier-egress:
+  web-edge:

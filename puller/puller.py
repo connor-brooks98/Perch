@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from blinkpy.helpers.util import json_load
 
 sys.path.insert(0, "/app")  # so `common` resolves inside the container
 from common import db, notify  # noqa: E402
+from common.clip_files import publish_downloaded_clips  # noqa: E402
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -112,13 +114,18 @@ async def poll_once(blink: Blink, conn) -> int:
     # bubble to the outer loop so they trigger ntfy + session rebuild instead
     # of being mistaken for a healthy "no new clips" cycle.
     try:
-        await blink.download_videos(
-            str(CLIPS_DIR),
-            since=last_since,
-            camera=CAMERA_NAME,
-            stop=20,
-            delay=1,
-        )
+        # Blink writes into a per-cycle staging directory. Only a successfully
+        # completed download call publishes MP4s into the classifier-visible
+        # directory, using same-filesystem atomic renames.
+        with tempfile.TemporaryDirectory(prefix=".incoming-", dir=CLIPS_DIR) as incoming:
+            await blink.download_videos(
+                incoming,
+                since=last_since,
+                camera=CAMERA_NAME,
+                stop=20,
+                delay=1,
+            )
+            publish_downloaded_clips(Path(incoming), CLIPS_DIR)
     except TypeError as exc:
         raise RuntimeError(
             "blinkpy download_videos() signature/behavior may have changed; "

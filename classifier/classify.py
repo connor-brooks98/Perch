@@ -7,10 +7,10 @@ then dequantizes the output to real probabilities. Letterboxing avoids
 squashing/stretching non-square crops, which otherwise slightly distorts the
 bird's proportions before classification.
 
-Model files are NOT bundled. Drop these two into classifier/model/ (see the
-README there):
-    model/model.tflite    — the quantized iNat bird classifier
-    model/labels.txt      — matching labels, one per line
+Model files are NOT bundled. Install the verified pair under classifier/model/
+(see the README there):
+    model/current/model.tflite    — the quantized iNat bird classifier
+    model/current/labels.txt      — matching labels, one per line
 """
 from __future__ import annotations
 

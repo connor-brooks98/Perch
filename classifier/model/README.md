@@ -1,36 +1,40 @@
 # Model files go here
 
-The classifier expects two files in this directory. They are **not** bundled
-with this repo — grab them from the original whosatmyfeeder project (Phase 3):
+The classifier expects one current bundle in this directory:
 
-```
 model/
-├── model.tflite    # AIY/Coral iNaturalist birds, MobileNet-v2, quantized
-└── labels.txt      # matching labels, one species per line
-```
+└── current/
+    ├── model.tflite    # AIY/Coral iNaturalist birds, MobileNetV2, quantized
+    └── labels.txt      # matching labels, one species per line
 
 ## Where to get them
 
-From the `mmcc-xx/whosatmyfeeder` repository, `model/` directory:
+These come from Google's Coral test-data repo. From the Perch project root, use
+the checked-in helper so both downloads are verified before they replace any
+existing model files:
 
-- The quantized classifier — a file like
-  `mobilenet_v2_1.0_224_inat_bird_quant.tflite`. Rename (or symlink) it to
-  `model.tflite`.
-- Its labels file — a file like `inat_bird_labels.txt`. Rename to `labels.txt`.
+    ./scripts/download-model.sh
 
-These originate from Google's Coral / AIY birds model, trained on the
-iNaturalist bird dataset. Everything runs locally on the Pi — no API, no
-per-inference cost.
+The script pins the source URLs and SHA-256 checksums, stages both files in a
+sibling directory, and promotes that directory as `current`. If promotion is
+interrupted, it restores the previous complete bundle.
+
+Existing installations that have files directly under `classifier/model/`
+must rerun `./scripts/download-model.sh` once to create the current bundle.
+
+## Runtime policy
+
+MobileNetV2 is Perch's stable runtime. ONNX models are experimental future
+work and are not supported by the production container. They need a separate
+runtime image, model-specific preprocessing, bird cropping, and Pi benchmarks
+before they can be considered for the stable path.
 
 ## Label format
 
-One label per line; the line number is the class index. Coral's file reads:
+One label per line; the line number is the class index. Reads like:
 
-```
-background
-Haemorhous mexicanus (House Finch)
-Cardinalis cardinalis (Northern Cardinal)
-```
+    Haemorhous mexicanus (House Finch)
+    Cardinalis cardinalis (Northern Cardinal)
 
 `classify.py` parses `Scientific name (Common Name)` into separate fields and
 treats any `background` class as "no bird." An optional numeric index prefix
