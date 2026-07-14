@@ -1,11 +1,12 @@
 import {startRouter} from "./router.js";
-import {getDetections, getSpecies, getSpeciesDetail, getToday, patchDetection} from "./api.js";
+import {getDetection, getDetections, getSpecies, getSpeciesDetail, getToday, patchDetection, searchTaxa} from "./api.js";
 import {inlineError, showStatus} from "./components.js";
 import {renderBirds} from "./views/birds.js";
 import {renderFavorites} from "./views/favorites.js";
 import {appendHistoryVisits, renderHistory} from "./views/history.js";
 import {appendSpeciesGallery, renderSpecies} from "./views/species.js";
 import {renderToday} from "./views/today.js";
+import {renderVisit} from "./views/visit.js";
 
 const view = document.querySelector("#view");
 let renderVersion = 0;
@@ -148,6 +149,24 @@ async function loadSpecies(version, key) {
   }
 }
 
+async function loadVisit(version, id) {
+  try {
+    const detection = await getDetection(id);
+    if (version !== renderVersion) return;
+    const actions = {
+      onToggleFavorite: (visit, favorite) => patchDetection(visit.id, {favorite}),
+      searchTaxa,
+      onSaveCorrection: (visit, patch) => patchDetection(visit.id, patch),
+      onDetectionChange: () => renderVisit(view, detection, actions),
+    };
+    renderVisit(view, detection, actions);
+    showStatus("");
+  } catch (_error) {
+    if (version !== renderVersion) return;
+    showLoadError("This visit could not be loaded.", () => loadVisit(version, id));
+  }
+}
+
 function render(route) {
   const version = ++renderVersion;
   view.dataset.route = route.name;
@@ -160,6 +179,7 @@ function render(route) {
   else if (route.name === "birds") loadBirds(version, route.params);
   else if (route.name === "favorites") loadFavorites(version);
   else if (route.name === "species") loadSpecies(version, route.params.get("key"));
+  else if (route.name === "visit") loadVisit(version, route.params.get("id"));
   else view.replaceChildren();
 }
 

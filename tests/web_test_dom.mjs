@@ -16,6 +16,7 @@ export class TestElement {
     this.disabled = false;
     this.value = "";
     this.checked = false;
+    this.open = false;
     this._text = "";
   }
 
@@ -50,6 +51,9 @@ export class TestElement {
 
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
+  removeAttribute(name) { this.attributes.delete(name); }
+
+  focus() { globalThis.document.activeElement = this; }
 
   addEventListener(name, callback) {
     const callbacks = this.listeners.get(name) || [];
@@ -96,6 +100,7 @@ export function installDom() {
   body.append(view, status);
   const document = {
     body,
+    activeElement: body,
     createElement: (tagName) => new TestElement(tagName),
     querySelector: (selector) => body.matches(selector) ? body : body.querySelector(selector),
   };

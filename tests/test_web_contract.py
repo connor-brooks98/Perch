@@ -304,6 +304,49 @@ class WebContractTests(unittest.TestCase):
             text=True,
         )
 
+    def test_visit_correction_contract(self):
+        self.assertTrue((ROOT / "web/site/views/visit.js").is_file())
+        source = read("web/site/views/visit.js")
+        app = read("web/site/app.js")
+        styles = read("web/site/styles.css")
+
+        for value in (
+            "display_image",
+            "effective_species",
+            "original_species",
+            "scientific",
+            "captured_at",
+            "confidence",
+            "favorite",
+            "corrected",
+            "excluded",
+            "Not a bird",
+            "Restore original identification",
+            "That correction was not saved. Try again.",
+        ):
+            self.assertIn(value, source)
+        self.assertIn("searchTaxa", source)
+        self.assertIn("200", source)
+        self.assertIn("slice(0, 20)", source)
+        self.assertIn("showModal", source)
+        self.assertIn('setAttribute("role", "dialog")', source)
+        self.assertIn("selected.common_name", source)
+        self.assertNotIn("correction: input.value", source)
+        self.assertIn("renderVisit", app)
+        self.assertIn("getDetection", app)
+        self.assertIn("searchTaxa", app)
+        self.assertIn("visit-detail", styles)
+        self.assertIn("correction-picker", styles)
+
+    def test_visit_javascript_behaviors(self):
+        subprocess.run(
+            ["node", "--test", "tests/test_visit.mjs"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def test_format_module_exposes_shared_journal_formatters(self):
         result = run_javascript(
             """

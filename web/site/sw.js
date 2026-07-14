@@ -14,6 +14,7 @@ const SHELL = [
   "views/favorites.js",
   "views/species.js",
   "views/today.js",
+  "views/visit.js",
   "manifest.json",
   "icons/perch-mark.svg",
   "icons/apple-touch-icon.png",
