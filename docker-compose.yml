@@ -101,6 +101,7 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
       - ./data/db:/data/db
+      - ./data/web/enrichment:/data/web/enrichment
       - ./classifier/model/current/labels.txt:/app/model/labels.txt:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777

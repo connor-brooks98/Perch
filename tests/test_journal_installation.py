@@ -55,6 +55,36 @@ class JournalInstallationContractTests(unittest.TestCase):
         self.assertNotIn("/data/blink", volumes)
         self.assertNotIn("/data/clips", volumes)
 
+        enrichment_mount = next(
+            (
+                mount
+                for mount in journal["volumes"]
+                if mount["target"] == "/data/web/enrichment"
+            ),
+            None,
+        )
+        self.assertIsNotNone(enrichment_mount)
+        self.assertEqual(enrichment_mount["type"], "bind")
+        self.assertEqual(
+            Path(enrichment_mount["source"]).resolve(),
+            (ROOT / "data" / "web" / "enrichment").resolve(),
+        )
+        self.assertFalse(enrichment_mount.get("read_only", False))
+        self.assertFalse(
+            any(mount["target"] == "/data/web" for mount in journal["volumes"])
+        )
+
+        web_mount = next(
+            mount
+            for mount in config["services"]["web"]["volumes"]
+            if mount["target"] == "/data/web"
+        )
+        self.assertEqual(web_mount["type"], "bind")
+        self.assertEqual(
+            Path(web_mount["source"]).resolve(), (ROOT / "data" / "web").resolve()
+        )
+        self.assertTrue(web_mount["read_only"])
+
     def test_caddy_proxies_api_before_static_fallback(self) -> None:
         caddy = read("web/Caddyfile")
         self.assertLess(caddy.index("handle /api/*"), caddy.index("handle {"))
@@ -62,6 +92,26 @@ class JournalInstallationContractTests(unittest.TestCase):
 
     def test_caddy_serves_authenticated_enrichment_images_from_data(self) -> None:
         caddy = read("web/Caddyfile")
-        self.assertIn("@dynamic path /thumbs/* /data/* /enrichment/*", caddy)
+        dynamic_matcher = "@dynamic path /thumbs/* /images/* /enrichment/* /data/*"
+        self.assertIn(dynamic_matcher, caddy)
         self.assertIn("root * /data/web", caddy)
-        self.assertLess(caddy.index("basic_auth"), caddy.index("@dynamic path"))
+        self.assertLess(caddy.index("basic_auth"), caddy.index(dynamic_matcher))
+        dynamic_handler = caddy[
+            caddy.index("handle @dynamic {") : caddy.index(
+                "\n\t}", caddy.index("handle @dynamic {")
+            )
+        ]
+        self.assertIn('header Cache-Control "no-store"', dynamic_handler)
+
+    def test_frontend_javascript_has_no_enrichment_provider_hostname(self) -> None:
+        javascript = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "web" / "site").rglob("*.js")
+        )
+        for hostname in (
+            "api.inaturalist.org",
+            "en.wikipedia.org",
+            "inaturalist-open-data.s3.amazonaws.com",
+            "static.inaturalist.org",
+        ):
+            self.assertNotIn(hostname, javascript)
