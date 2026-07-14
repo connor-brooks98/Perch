@@ -57,6 +57,22 @@ CREATE TABLE IF NOT EXISTS species_journal_state (
     opened_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS species_profiles (
+    species_key TEXT PRIMARY KEY,
+    inat_taxon_id INTEGER,
+    introduction TEXT,
+    inat_url TEXT,
+    wikipedia_url TEXT,
+    reference_image TEXT,
+    image_source_url TEXT,
+    image_creator TEXT,
+    image_license TEXT,
+    fetched_at TEXT,
+    retry_after TEXT,
+    error_category TEXT,
+    updated_at TEXT NOT NULL
+);
+
 -- Tiny key/value store for cursors (e.g. last 'since' timestamp for the puller).
 CREATE TABLE IF NOT EXISTS state (
     key   TEXT PRIMARY KEY,
