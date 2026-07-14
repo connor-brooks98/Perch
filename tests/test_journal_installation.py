@@ -59,3 +59,9 @@ class JournalInstallationContractTests(unittest.TestCase):
         caddy = read("web/Caddyfile")
         self.assertLess(caddy.index("handle /api/*"), caddy.index("handle {"))
         self.assertIn("reverse_proxy journal:8000", caddy)
+
+    def test_caddy_serves_authenticated_enrichment_images_from_data(self) -> None:
+        caddy = read("web/Caddyfile")
+        self.assertIn("@dynamic path /thumbs/* /data/* /enrichment/*", caddy)
+        self.assertIn("root * /data/web", caddy)
+        self.assertLess(caddy.index("basic_auth"), caddy.index("@dynamic path"))

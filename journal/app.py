@@ -23,6 +23,7 @@ DEFAULTS = {
     "TZ": os.getenv("TZ", "America/New_York"),
     "MAX_PAGE_SIZE": 100,
     "DB_TIMEOUT_SECONDS": 0.05,
+    "ENRICHMENT_DB_TIMEOUT_SECONDS": 0.01,
     "ENRICHMENT_DIR": os.getenv("ENRICHMENT_DIR", "/data/web/enrichment"),
     "ENRICHMENT_AUTOSTART": None,
 }
@@ -238,14 +239,23 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         if result is None:
             return error("not_found", 404)
         try:
-            profile = app.extensions["enrichment"].get(species_key)
+            profile = app.extensions["enrichment"].get(
+                species_key,
+                timeout_seconds=app.config["ENRICHMENT_DB_TIMEOUT_SECONDS"],
+            )
         except Exception:
             log.warning(
                 "species_enrichment_failure category=cache species_key=%s",
                 species_key,
             )
             profile = {"status": "pending"}
-        if not isinstance(profile, dict) or "status" not in profile:
+        status = profile.get("status") if isinstance(profile, dict) else None
+        if not isinstance(status, str) or status not in {
+            "pending",
+            "ready",
+            "stale",
+            "failed",
+        }:
             profile = {"status": "pending"}
         if profile["status"] in {"pending", "stale"}:
             try:
@@ -253,6 +263,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                     species_key=species_key,
                     common=result["common_name"],
                     scientific=result["scientific"],
+                    cached_profile=profile,
                 )
             except Exception:
                 log.warning(

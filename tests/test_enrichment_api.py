@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from common import db
 from journal.app import create_app
+from journal.enrichment import EnrichmentService
 
 
 LABELS = """0 background
 1 Cyanocitta cristata (Blue Jay)
 """
 SPECIES_KEY = "sci:cyanocitta cristata"
+GENERATED_IMAGE = "a" * 24 + "-" + "b" * 32 + ".jpg"
 
 
 class EnrichmentApiTests(unittest.TestCase):
@@ -77,11 +80,12 @@ class EnrichmentApiTests(unittest.TestCase):
                 "reference_image": None,
             },
         )
-        self.service.get.assert_called_once_with(SPECIES_KEY)
+        self.service.get.assert_called_once_with(SPECIES_KEY, timeout_seconds=0.01)
         self.service.schedule.assert_called_once_with(
             species_key=SPECIES_KEY,
             common="Blue Jay",
             scientific="Cyanocitta cristata",
+            cached_profile={"status": "pending"},
         )
 
     def test_scheduling_failure_never_replaces_local_species_data(self) -> None:
@@ -108,7 +112,7 @@ class EnrichmentApiTests(unittest.TestCase):
             "introduction": "Cached blue jay introduction.",
             "inat_url": "https://www.inaturalist.org/taxa/8229",
             "wikipedia_url": "https://en.wikipedia.org/wiki/Blue_jay",
-            "reference_image": "blue-jay.jpg",
+            "reference_image": GENERATED_IMAGE,
             "image_creator": "Jane Birder",
             "image_license": "CC BY 4.0",
             "image_source_url": "https://static.inaturalist.org/photos/1.jpg",
@@ -129,7 +133,7 @@ class EnrichmentApiTests(unittest.TestCase):
                     "wikipedia": "https://en.wikipedia.org/wiki/Blue_jay",
                 },
                 "reference_image": {
-                    "src": "/enrichment/blue-jay.jpg",
+                    "src": "/enrichment/" + GENERATED_IMAGE,
                     "creator": "Jane Birder",
                     "license": "CC BY 4.0",
                     "source": "https://static.inaturalist.org/photos/1.jpg",
@@ -140,24 +144,76 @@ class EnrichmentApiTests(unittest.TestCase):
             species_key=SPECIES_KEY,
             common="Blue Jay",
             scientific="Cyanocitta cristata",
+            cached_profile=self.service.get.return_value,
         )
 
-    def test_reference_image_requires_complete_attribution(self) -> None:
-        self.service.get.return_value = {
-            "status": "ready",
-            "introduction": "Cached introduction.",
-            "reference_image": "https://third-party.example/bird.jpg",
-            "image_creator": "Jane Birder",
-            "image_license": "CC BY 4.0",
-            "image_source_url": "https://third-party.example/source",
-        }
+    def test_reference_image_requires_a_service_generated_filename(self) -> None:
+        unsafe_filenames = (
+            "https://third-party.example/bird.jpg",
+            "..\\secret.jpg",
+            "%2e%2e%2fsecret.jpg",
+            "%5csecret.jpg",
+            "nested/secret.jpg",
+        )
+        for filename in unsafe_filenames:
+            with self.subTest(filename=filename):
+                self.service.reset_mock()
+                self.service.get.return_value = {
+                    "status": "ready",
+                    "introduction": "Cached introduction.",
+                    "reference_image": filename,
+                    "image_creator": "Jane Birder",
+                    "image_license": "CC BY 4.0",
+                    "image_source_url": "https://third-party.example/source",
+                }
 
-        response = self.get_species()
+                response = self.get_species()
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.json["enrichment"]["reference_image"])
+                self.assertNotIn(filename, response.get_data(as_text=True))
+                self.service.schedule.assert_not_called()
+
+    def test_malformed_cache_status_falls_back_without_losing_local_data(self) -> None:
+        for malformed in (["stale"], {"status": "stale"}, None):
+            with self.subTest(malformed=malformed):
+                self.service.reset_mock()
+                self.service.get.return_value = {"status": malformed}
+
+                response = self.get_species()
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json["visits"], 2)
+                self.assertEqual(response.json["enrichment"]["status"], "pending")
+
+    def test_contended_real_cache_is_tightly_bounded_and_local_data_stays_200(self) -> None:
+        root = Path(self.temporary.name)
+        cache_path = root / "contended-enrichment.sqlite"
+        db.connect(cache_path).close()
+        real_service = EnrichmentService(cache_path, root / "real-enrichment")
+        self.app.extensions["enrichment"] = real_service
+        self.app.config["ENRICHMENT_DB_TIMEOUT_SECONDS"] = 0.01
+        blocker = sqlite3.connect(cache_path, isolation_level=None)
+        try:
+            blocker.execute("PRAGMA journal_mode = DELETE")
+            blocker.execute("BEGIN EXCLUSIVE")
+            started = time.monotonic()
+
+            with mock.patch.object(
+                real_service, "get", wraps=real_service.get
+            ) as cache_get:
+                response = self.get_species()
+
+            elapsed = time.monotonic() - started
+        finally:
+            blocker.rollback()
+            blocker.close()
+            real_service.stop()
 
         self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.json["enrichment"]["reference_image"])
-        self.assertNotIn("https://third-party.example/bird.jpg", response.get_data(as_text=True))
-        self.service.schedule.assert_not_called()
+        self.assertEqual(response.json["visits"], 2)
+        self.assertEqual(cache_get.call_count, 1)
+        self.assertLess(elapsed, 0.25)
 
 
 if __name__ == "__main__":

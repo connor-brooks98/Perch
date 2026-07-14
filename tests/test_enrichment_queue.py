@@ -165,7 +165,9 @@ class EnrichmentServiceTests(unittest.TestCase):
     def test_schedule_collapses_duplicates_and_recovers_after_queue_rejection(self) -> None:
         self.assertTrue(
             self.service.schedule(
-                "sci:cyanocitta cristata", "Blue Jay", "Cyanocitta cristata"
+                species_key="sci:cyanocitta cristata",
+                common="Blue Jay",
+                scientific="Cyanocitta cristata",
             )
         )
         self.assertFalse(

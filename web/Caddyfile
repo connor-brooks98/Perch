@@ -19,7 +19,7 @@
 	}
 
 	# Dynamic content the classifier writes lives on the /data volume.
-	@dynamic path /thumbs/* /data/*
+	@dynamic path /thumbs/* /data/* /enrichment/*
 	handle @dynamic {
 		root * /data/web
 		header Cache-Control "no-store"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass
@@ -61,11 +62,18 @@ class EnrichmentService:
         self._thread: threading.Thread | None = None
         self._stopping = False
 
-    def get(self, species_key: str) -> dict | None:
+    def get(
+        self, species_key: str, *, timeout_seconds: float = 5
+    ) -> dict | None:
         if not isinstance(species_key, str) or not species_key:
             return None
-        conn = db.connect(self.db_path)
+        timeout = float(timeout_seconds)
+        if timeout < 0:
+            raise ValueError("timeout must not be negative")
+        conn = sqlite3.connect(str(self.db_path), timeout=timeout)
+        conn.row_factory = sqlite3.Row
         try:
+            conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)}")
             row = conn.execute(
                 "SELECT * FROM species_profiles WHERE species_key = ?",
                 (species_key,),
@@ -91,15 +99,31 @@ class EnrichmentService:
         result["status"] = "ready" if now - fetched_at < FRESH_FOR else "stale"
         return result
 
-    def schedule(self, species_key: str, common: str, scientific: str) -> bool:
-        """Schedule a profile using the API contract's species name keywords."""
+    def schedule(
+        self,
+        species_key: str,
+        common: str,
+        scientific: str,
+        *,
+        cached_profile: dict | None = None,
+    ) -> bool:
+        """Implement schedule(species_key, common, scientific).
+
+        A caller that already read the cache may pass that profile to avoid a
+        duplicate synchronous lookup.
+        """
         if not all(
             isinstance(value, str) and value.strip()
             for value in (species_key, common, scientific)
         ):
             return False
-        current = self.get(species_key)
-        if current is None or current["status"] not in {"pending", "stale"}:
+        current = (
+            cached_profile
+            if cached_profile is not None
+            else self.get(species_key)
+        )
+        status = current.get("status") if isinstance(current, dict) else None
+        if not isinstance(status, str) or status not in {"pending", "stale"}:
             return False
         job = _Job(
             species_key=species_key,

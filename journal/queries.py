@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sqlite3
 from datetime import date, datetime, time, timezone
-from pathlib import PurePath
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -13,6 +13,7 @@ from common import db
 from journal.labels import LabelCatalog
 
 MAX_PAGE_SIZE = 100
+_ENRICHMENT_IMAGE_RE = re.compile(r"^[0-9a-f]{24}-[0-9a-f]{32}\.jpg$")
 
 EFFECTIVE_SQL = """
 SELECT d.*, COALESCE(NULLIF(a.corrected_common_name,''), d.common_name) AS effective_common,
@@ -144,12 +145,7 @@ def serialize_enrichment(profile: dict[str, Any]) -> dict[str, Any]:
             "image_source_url",
         )
     )
-    local_filename = (
-        fully_attributed
-        and PurePath(filename).name == filename
-        and filename not in {".", ".."}
-        and "://" not in filename
-    )
+    local_filename = fully_attributed and _ENRICHMENT_IMAGE_RE.fullmatch(filename)
     reference_image = None
     if local_filename:
         reference_image = {
