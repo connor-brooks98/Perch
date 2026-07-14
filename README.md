@@ -238,7 +238,9 @@ dashboard is a static HTML/CSS/JavaScript export served by Caddy.
   a synthetic inference so incompatible model/runtime combinations fail before
   launch.
 - Install the model and labels together with `./scripts/download-model.sh`. The
-  script verifies pinned SHA-256 checksums and promotes both files as one bundle.
+  script verifies pinned SHA-256 checksums and promotes both files as one bundle
+  to `classifier/model/current/model.tflite` and
+  `classifier/model/current/labels.txt`.
 - ONNX remains an experimental future option, not an installable Perch backend.
   It requires a separate image and dependencies, model-specific input handling,
   a bird-cropping stage, Raspberry Pi 5 memory and latency benchmarks, and
